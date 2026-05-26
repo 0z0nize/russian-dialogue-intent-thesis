@@ -105,8 +105,22 @@ CSS = """
 """
 
 
+def _gradio_major_version() -> int:
+    try:
+        return int(gr.__version__.split(".", 1)[0])
+    except (AttributeError, ValueError):
+        return 0
+
+
 def build_demo() -> gr.Blocks:
-    with gr.Blocks(title="DialogSum-RU · intent demo", css=CSS, theme=gr.themes.Soft()) as demo:
+    # В Gradio 6 параметры theme/css в конструкторе Blocks вызывают
+    # UserWarning и должны передаваться в demo.launch(). В Gradio 5
+    # launch() их не принимает — там оставляем старый путь.
+    blocks_kwargs: Dict[str, Any] = {"title": "DialogSum-RU · intent demo"}
+    if _gradio_major_version() < 6:
+        blocks_kwargs["css"] = CSS
+        blocks_kwargs["theme"] = gr.themes.Soft()
+    with gr.Blocks(**blocks_kwargs) as demo:
         gr.Markdown(INTRO_MD)
 
         with gr.Tabs():
@@ -205,4 +219,10 @@ demo = build_demo()
 
 if __name__ == "__main__":
     demo.queue()
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    launch_kwargs: Dict[str, Any] = dict(
+        server_name="0.0.0.0", server_port=7860, share=False
+    )
+    if _gradio_major_version() >= 6:
+        launch_kwargs["theme"] = gr.themes.Soft()
+        launch_kwargs["css"] = CSS
+    demo.launch(**launch_kwargs)
