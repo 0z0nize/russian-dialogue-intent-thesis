@@ -1,0 +1,33 @@
+# docker-compose.yml для демо DialogSum-RU intent webapp.
+# Запускается из папки `dialogsum_intent_webapp/deploy/`:
+#   cd dialogsum_intent_webapp/deploy
+#   docker compose up --build -d
+
+version: "3.9"
+
+services:
+  webapp:
+    build:
+      # Контекст — родительская папка `dialogsum_intent_webapp/`,
+      # Dockerfile лежит в `deploy/`.
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: dialogsum-intent-webapp:latest
+    container_name: dialogsum-intent-webapp
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    environment:
+      # Размер модели Whisper. Для слабого VPS используйте small или base.
+      WHISPER_MODEL_SIZE: ${WHISPER_MODEL_SIZE:-small}
+      # Дополнительные опциональные переменные:
+      # SENTENCE_MODEL: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+      MODELS_DIR: /app/models
+    volumes:
+      # Монтируем артефакты моделей хоста (если есть) в контейнер.
+      - ../models:/app/models
+      # Кэш Hugging Face, чтобы веса не качались каждый раз.
+      - hf_cache:/app/.cache/huggingface
+
+volumes:
+  hf_cache:
