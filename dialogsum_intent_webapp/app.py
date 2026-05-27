@@ -9,8 +9,10 @@ Gradio Blocks UI для демо ВКР по русскоязычному рас
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, Tuple
 
 import gradio as gr
@@ -186,24 +188,29 @@ def analyze_audio(audio_path: str):
 # UI
 # ---------------------------------------------------------------------------
 
-# Инлайновый ITMO-логотип: компактный SVG, чтобы UI не зависел от внешних
-# картинок (не падал без сети и не упирался в политики CSP площадок).
-ITMO_LOGO_SVG = """
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="64" height="64" aria-label="ITMO" role="img">
-  <rect x="2" y="2" width="92" height="92" rx="14" fill="#0f4ea8"/>
-  <text x="48" y="44" text-anchor="middle"
-        font-family="'Helvetica Neue', Arial, sans-serif"
-        font-weight="700" font-size="26" fill="#ffffff" letter-spacing="2">ITMO</text>
-  <text x="48" y="66" text-anchor="middle"
-        font-family="'Helvetica Neue', Arial, sans-serif"
-        font-weight="500" font-size="11" fill="#cfe1ff" letter-spacing="1.5">UNIVERSITY</text>
-  <rect x="14" y="74" width="68" height="6" rx="3" fill="#f5a623"/>
-</svg>
-"""
+# Официальный логотип НИУ ИТМО (плашка, белые буквы на тёмной плашке).
+# Источник: assets/logo_plate_russian_white.eps (исходник), PNG получен через
+# ImageMagick + Ghostscript. Встраиваем как data-URI, чтобы UI не зависел от
+# сетевого хостинга статических файлов и работал даже на пустом VPS.
+ITMO_LOGO_PATH = Path(__file__).parent / "assets" / "logo_plate_russian_white.png"
+
+
+def _itmo_logo_img_tag() -> str:
+    try:
+        data = ITMO_LOGO_PATH.read_bytes()
+        b64 = base64.b64encode(data).decode("ascii")
+        return (
+            f'<img src="data:image/png;base64,{b64}" alt="НИУ ИТМО" '
+            f'class="itmo-logo-img" />'
+        )
+    except OSError as exc:
+        logger.warning("Не удалось загрузить логотип ИТМО %s: %s", ITMO_LOGO_PATH, exc)
+        return '<span class="itmo-logo-fallback">ИТМО</span>'
+
 
 HEADER_HTML = f"""
 <div class="itmo-header">
-  <div class="itmo-logo">{ITMO_LOGO_SVG}</div>
+  <div class="itmo-logo">{_itmo_logo_img_tag()}</div>
   <div class="itmo-title">
     <h1>Семантический анализ русскоязычных диалогов для задачи распознавания намерений с улучшением на базе предобученных моделей</h1>
     <div class="itmo-meta">
@@ -263,18 +270,32 @@ CSS = """
 .gradio-container {max-width: 1100px !important;}
 #json-out textarea, #json-out pre {font-size: 0.85rem;}
 .small-note {color: #6b6b6b; font-size: 0.85rem;}
-.itmo-header {display: flex; align-items: center; gap: 18px; margin: 4px 0 8px 0;}
-.itmo-header .itmo-logo {flex: 0 0 auto;}
-.itmo-header .itmo-title h1 {margin: 0 0 6px 0; font-size: 1.25rem; line-height: 1.3;}
+.itmo-header {display: flex; align-items: center; gap: 18px;
+              margin: 4px 0 8px 0; padding: 10px 14px;
+              background: #f4f7fb; border: 1px solid #d6e1ef; border-radius: 10px;}
+.itmo-header .itmo-logo {flex: 0 0 auto;
+                         display: flex; align-items: center; justify-content: center;}
+.itmo-header .itmo-logo-img {height: 64px; width: auto; display: block;}
+.itmo-header .itmo-logo-fallback {display: inline-block; padding: 10px 14px;
+                                  background: #0f1a2e; color: #ffffff;
+                                  border-radius: 8px; font-weight: 700;
+                                  letter-spacing: 2px;}
+.itmo-header .itmo-title h1 {margin: 0 0 6px 0; font-size: 1.25rem; line-height: 1.3; color: #1a1a1a;}
 .itmo-header .itmo-meta {font-size: 0.9rem; color: #444;}
+.itmo-header .itmo-meta a {color: #0f4ea8;}
 .itmo-hints {background: #f4f7fb; border: 1px solid #d6e1ef; border-radius: 8px;
-             padding: 8px 12px; margin: 6px 0 4px 0; font-size: 0.9rem;}
+             padding: 8px 12px; margin: 6px 0 4px 0; font-size: 0.9rem;
+             color: #1a1a1a;}
 .itmo-hints summary {cursor: pointer; font-weight: 600; color: #0f4ea8;}
+.itmo-hints .itmo-hints-body,
+.itmo-hints .itmo-hints-body * {color: #1a1a1a;}
 .itmo-hints .itmo-themes {columns: 2; -webkit-columns: 2; -moz-columns: 2;
                           margin: 6px 0 6px 18px; padding: 0;}
-.itmo-hints .itmo-themes li {margin: 1px 0;}
-.itmo-hints-examples {margin-top: 6px;}
+.itmo-hints .itmo-themes li {margin: 1px 0; color: #1a1a1a;}
+.itmo-hints-examples {margin-top: 6px; color: #1a1a1a;}
+.itmo-hints-examples b {color: #0f4ea8;}
 .itmo-hints-examples ul {margin: 4px 0 0 18px; padding: 0;}
+.itmo-hints-examples li {color: #1a1a1a;}
 """
 
 
@@ -373,7 +394,8 @@ def build_demo() -> gr.Blocks:
                         gr.HTML(
                             "<details class='itmo-hints'>"
                             "<summary>💡 Темы для тестирования</summary>"
-                            "<div class='itmo-hints-body'>Произнесите фразу на одну из тем: "
+                            "<div class='itmo-hints-body'>"
+                            "Произнесите фразу на одну из тем: "
                             "собеседование / работа, путешествия / билеты, покупка / заказ, "
                             "ремонт / обслуживание, жалоба / проблема, образование, "
                             "дом / бытовые вопросы, поиск книг, музыкальные события, развлечения."

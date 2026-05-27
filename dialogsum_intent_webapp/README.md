@@ -30,7 +30,10 @@ audio ──► faster-whisper (lazy)
 ```
 
 - UI: **Gradio Blocks** (две вкладки «Текст» / «Голос»), русский интерфейс.
-  В шапке — инлайн-логотип ИТМО (SVG, без зависимости от внешних картинок),
+  В шапке — официальный логотип НИУ ИТМО
+  (`assets/logo_plate_russian_white.eps` — исходник, плюс
+  `assets/logo_plate_russian_white.png` — веб-версия, встраивается в HTML
+  как data-URI, чтобы UI не зависел от внешних картинок),
   полное название ВКР, автор и ссылка на README в GitHub.
   Сверху на странице видна плашка с текущим `Intent mode`
   (`single_task_rubert_model` / `sklearn_intent_model` / `rule_based_fallback`),
