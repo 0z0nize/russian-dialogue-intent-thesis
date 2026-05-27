@@ -69,17 +69,38 @@ def _status_banner_md() -> str:
         "disabled": "⛔",
         "error": "⚠️",
     }.get(summary_mode, "ℹ️")
-    summary_target = status.get("summarizer_path_or_name") or "не выбран"
-    summary_source = status.get("summarizer_source") or "будет определён при первом вызове"
+    default_summary_model = os.environ.get(
+        "SUMMARIZATION_MODEL_NAME", "IlyaGusev/rut5_base_sum_gazeta"
+    )
+    summary_target = (
+        status.get("summarizer_path_or_name")
+        or (default_summary_model if summary_mode != "disabled" else "—")
+    )
+    summary_source = status.get("summarizer_source")
+    if summary_mode == "pending_lazy_load":
+        summary_source_label = (
+            "будет загружена при первом запросе на суммаризацию"
+        )
+        mode_label = "ожидает первого запроса (ленивая загрузка)"
+    elif summary_mode == "transformers_seq2seq":
+        src_map = {"local": "локальная папка", "huggingface_hub": "Hugging Face Hub"}
+        summary_source_label = src_map.get(summary_source or "", summary_source or "—")
+        mode_label = "готова (transformers seq2seq)"
+    elif summary_mode == "disabled":
+        summary_source_label = "—"
+        mode_label = "отключена (ENABLE_SUMMARIZATION=false)"
+    else:
+        summary_source_label = summary_source or "—"
+        mode_label = summary_mode
     summary_err = status.get("summarizer_load_error")
     summary_err_md = (
         f"<br><span class='small-note'>⚠ Суммаризация: {summary_err}</span>"
         if summary_err else ""
     )
     summary_line = (
-        f"<div class='small-note'>{summary_icon} <b>Summary mode:</b> "
-        f"<code>{summary_mode}</code> · модель: <code>{summary_target}</code> "
-        f"(источник: <code>{summary_source}</code>){summary_err_md}</div>"
+        f"<div class='small-note'>{summary_icon} <b>Суммаризация:</b> "
+        f"{mode_label} · модель: <code>{summary_target}</code> "
+        f"(источник: {summary_source_label}){summary_err_md}</div>"
     )
 
     return (
@@ -165,13 +186,37 @@ def analyze_audio(audio_path: str):
 # UI
 # ---------------------------------------------------------------------------
 
+# Инлайновый ITMO-логотип: компактный SVG, чтобы UI не зависел от внешних
+# картинок (не падал без сети и не упирался в политики CSP площадок).
+ITMO_LOGO_SVG = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="64" height="64" aria-label="ITMO" role="img">
+  <rect x="2" y="2" width="92" height="92" rx="14" fill="#0f4ea8"/>
+  <text x="48" y="44" text-anchor="middle"
+        font-family="'Helvetica Neue', Arial, sans-serif"
+        font-weight="700" font-size="26" fill="#ffffff" letter-spacing="2">ITMO</text>
+  <text x="48" y="66" text-anchor="middle"
+        font-family="'Helvetica Neue', Arial, sans-serif"
+        font-weight="500" font-size="11" fill="#cfe1ff" letter-spacing="1.5">UNIVERSITY</text>
+  <rect x="14" y="74" width="68" height="6" rx="3" fill="#f5a623"/>
+</svg>
+"""
+
+HEADER_HTML = f"""
+<div class="itmo-header">
+  <div class="itmo-logo">{ITMO_LOGO_SVG}</div>
+  <div class="itmo-title">
+    <h1>Семантический анализ русскоязычных диалогов для задачи распознавания намерений с улучшением на базе предобученных моделей</h1>
+    <div class="itmo-meta">
+      <b>Шкаровский Владислав Семёнович</b> · НИУ ИТМО, магистратура, образовательная программа «Аналитика данных».
+    </div>
+    <div class="itmo-meta">
+      <a href="https://github.com/0z0nize/russian-dialogue-intent-thesis/blob/main/README.md" target="_blank" rel="noopener">📖 README на GitHub</a>
+    </div>
+  </div>
+</div>
+"""
+
 INTRO_MD = """
-# Семантический анализ русскоязычных диалогов для задачи распознавания намерений с улучшением на базе предобученных моделей
-
-**Шкаровский Владислав Семёнович**, НИУ ИТМО, магистратура, образовательная программа «Аналитика данных».
-
-[📖 README на GitHub](https://github.com/0z0nize/russian-dialogue-intent-thesis/blob/main/README.md)
-
 Демо к магистерской ВКР по корпусу **DialogSum-RU**: на вход — текст или
 голосовая запись на русском, на выход — намерение (intent), тематический
 кластер и сводка по реплике.
@@ -180,10 +225,56 @@ INTRO_MD = """
 из ВКР, чтобы интерфейс работал даже на пустом VPS.
 """
 
+# Темы и примеры для тестирования интерфейса. Показываются под кнопками
+# «Анализировать» / «Распознать», чтобы пользователь видел подсказку, но
+# она не загромождала верх страницы.
+TEST_THEMES_HTML = """
+<details class="itmo-hints" open>
+  <summary>💡 Темы для тестирования интерфейса (нажмите, чтобы свернуть)</summary>
+  <div class="itmo-hints-body">
+    <div>Попробуйте реплики на следующие темы:</div>
+    <ul class="itmo-themes">
+      <li>собеседование / работа</li>
+      <li>путешествия / билеты</li>
+      <li>покупка / заказ</li>
+      <li>ремонт / обслуживание</li>
+      <li>жалоба / проблема</li>
+      <li>образование</li>
+      <li>дом / бытовые вопросы</li>
+      <li>поиск книг</li>
+      <li>музыкальные события</li>
+      <li>развлечения</li>
+    </ul>
+    <div class="itmo-hints-examples">
+      <b>Готовые примеры:</b>
+      <ul>
+        <li>«Здравствуйте, я хочу забронировать билет на концерт в Москве.»</li>
+        <li>«Подскажите, как записаться на собеседование по вакансии аналитика.»</li>
+        <li>«У меня жалоба: посылка пришла повреждённой, верните деньги.»</li>
+        <li>«Не могу найти книгу автора Достоевского, помогите подобрать издание.»</li>
+        <li>«Нужно вызвать мастера — стиральная машина не работает.»</li>
+      </ul>
+    </div>
+  </div>
+</details>
+"""
+
 CSS = """
 .gradio-container {max-width: 1100px !important;}
 #json-out textarea, #json-out pre {font-size: 0.85rem;}
 .small-note {color: #6b6b6b; font-size: 0.85rem;}
+.itmo-header {display: flex; align-items: center; gap: 18px; margin: 4px 0 8px 0;}
+.itmo-header .itmo-logo {flex: 0 0 auto;}
+.itmo-header .itmo-title h1 {margin: 0 0 6px 0; font-size: 1.25rem; line-height: 1.3;}
+.itmo-header .itmo-meta {font-size: 0.9rem; color: #444;}
+.itmo-hints {background: #f4f7fb; border: 1px solid #d6e1ef; border-radius: 8px;
+             padding: 8px 12px; margin: 6px 0 4px 0; font-size: 0.9rem;}
+.itmo-hints summary {cursor: pointer; font-weight: 600; color: #0f4ea8;}
+.itmo-hints .itmo-themes {columns: 2; -webkit-columns: 2; -moz-columns: 2;
+                          margin: 6px 0 6px 18px; padding: 0;}
+.itmo-hints .itmo-themes li {margin: 1px 0;}
+.itmo-hints-examples {margin-top: 6px;}
+.itmo-hints-examples ul {margin: 4px 0 0 18px; padding: 0;}
 """
 
 
@@ -203,6 +294,7 @@ def build_demo() -> gr.Blocks:
         blocks_kwargs["css"] = CSS
         blocks_kwargs["theme"] = gr.themes.Soft()
     with gr.Blocks(**blocks_kwargs) as demo:
+        gr.HTML(HEADER_HTML)
         gr.Markdown(INTRO_MD)
         gr.Markdown(_status_banner_md())
 
@@ -219,6 +311,7 @@ def build_demo() -> gr.Blocks:
                         with gr.Row():
                             text_btn = gr.Button("Анализировать", variant="primary")
                             text_clear_btn = gr.Button("Очистить", variant="secondary")
+                        gr.HTML(TEST_THEMES_HTML)
                         gr.Markdown(
                             "<span class='small-note'>Поле <b>Intent mode</b> ниже показывает, "
                             "какой модуль обработал реплику: <code>single_task_rubert_model</code> "
@@ -276,6 +369,15 @@ def build_demo() -> gr.Blocks:
                             "<span class='small-note'>STT: faster-whisper. По умолчанию модель "
                             f"<code>{os.environ.get('WHISPER_MODEL_SIZE', 'medium')}</code>. "
                             "Микрофон в браузере обычно требует HTTPS — иначе используйте upload.</span>"
+                        )
+                        gr.HTML(
+                            "<details class='itmo-hints'>"
+                            "<summary>💡 Темы для тестирования</summary>"
+                            "<div class='itmo-hints-body'>Произнесите фразу на одну из тем: "
+                            "собеседование / работа, путешествия / билеты, покупка / заказ, "
+                            "ремонт / обслуживание, жалоба / проблема, образование, "
+                            "дом / бытовые вопросы, поиск книг, музыкальные события, развлечения."
+                            "</div></details>"
                         )
                     with gr.Column(scale=4):
                         a_text = gr.Textbox(label="Распознанный текст", lines=4)
