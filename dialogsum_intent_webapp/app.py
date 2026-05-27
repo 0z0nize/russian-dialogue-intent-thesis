@@ -280,8 +280,11 @@ CSS = """
                                   background: #0f1a2e; color: #ffffff;
                                   border-radius: 8px; font-weight: 700;
                                   letter-spacing: 2px;}
+.itmo-header,
+.itmo-header * {color: #1a1a1a;}
 .itmo-header .itmo-title h1 {margin: 0 0 6px 0; font-size: 1.25rem; line-height: 1.3; color: #1a1a1a;}
-.itmo-header .itmo-meta {font-size: 0.9rem; color: #444;}
+.itmo-header .itmo-meta {font-size: 0.9rem; color: #1a1a1a;}
+.itmo-header .itmo-meta b {color: #1a1a1a;}
 .itmo-header .itmo-meta a {color: #0f4ea8;}
 .itmo-hints {background: #f4f7fb; border: 1px solid #d6e1ef; border-radius: 8px;
              padding: 8px 12px; margin: 6px 0 4px 0; font-size: 0.9rem;
