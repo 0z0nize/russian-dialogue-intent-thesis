@@ -31,22 +31,59 @@ def _status_banner_md() -> str:
         "🟡" if mode == "sklearn_intent_model" else "⚠️"
     )
     if mode == "single_task_rubert_model":
-        text = (
+        intent_text = (
             "Single-task RuBERT (notebook 11). Test metrics: "
             "accuracy 0.9126, macro-F1 0.7770."
         )
     elif mode == "sklearn_intent_model":
-        text = "sklearn-pipeline intent_model.joblib (legacy)."
+        intent_text = "sklearn-pipeline intent_model.joblib (legacy)."
     else:
-        text = (
+        intent_text = (
             "Артефакты не подключены — работает rule-based fallback. "
             "См. README → «Подключение лучшей модели из notebook 11»."
         )
+
+    intent_src = status.get("torch_intent_state_source") or "missing"
+    src_label = {
+        "local": "локальная папка models/",
+        "google_drive": "Google Drive",
+        "missing": "артефакт не найден",
+    }.get(intent_src, intent_src)
+    drive_note = (
+        f" · <b>Источник intent:</b> <code>{intent_src}</code> ({src_label})"
+    )
+    if status.get("drive_available"):
+        drive_note += " · Google Drive подключён"
+    else:
+        drive_note += " · Google Drive не подключён"
+
     err = status.get("torch_intent_load_error")
     err_md = f"<br><span class='small-note'>⚠ Загрузка torch модели: {err}</span>" if err else ""
+
+    summary_mode = status.get("summary_mode", "pending_lazy_load")
+    summary_icon = {
+        "transformers_seq2seq": "✅",
+        "pending_lazy_load": "🕓",
+        "disabled": "⛔",
+        "error": "⚠️",
+    }.get(summary_mode, "ℹ️")
+    summary_target = status.get("summarizer_path_or_name") or "не выбран"
+    summary_source = status.get("summarizer_source") or "будет определён при первом вызове"
+    summary_err = status.get("summarizer_load_error")
+    summary_err_md = (
+        f"<br><span class='small-note'>⚠ Суммаризация: {summary_err}</span>"
+        if summary_err else ""
+    )
+    summary_line = (
+        f"<div class='small-note'>{summary_icon} <b>Summary mode:</b> "
+        f"<code>{summary_mode}</code> · модель: <code>{summary_target}</code> "
+        f"(источник: <code>{summary_source}</code>){summary_err_md}</div>"
+    )
+
     return (
         f"<div class='small-note'>{icon} <b>Intent mode:</b> "
-        f"<code>{mode}</code> — {text}{err_md}</div>"
+        f"<code>{mode}</code> — {intent_text}{drive_note}{err_md}</div>"
+        + summary_line
     )
 
 
@@ -60,6 +97,14 @@ def _format_top_words(words) -> str:
     return ", ".join(str(w) for w in words)
 
 
+def _format_summary(result: Dict[str, Any]) -> str:
+    summary = result.get("summary")
+    status = result.get("summary_status") or ""
+    if summary:
+        return f"{summary}\n\n[{status}]" if status else summary
+    return status
+
+
 def _result_tuple(result: Dict[str, Any]) -> Tuple:
     """Раскладывает dict от analyze() в кортеж для Gradio outputs."""
     return (
@@ -70,7 +115,7 @@ def _result_tuple(result: Dict[str, Any]) -> Tuple:
         result.get("topic_cluster_name") or "",
         result.get("topic_cluster_description") or "",
         _format_top_words(result.get("topic_top_words")),
-        result.get("summary") if result.get("summary") is not None else (result.get("summary_status") or ""),
+        _format_summary(result),
         result,
     )
 

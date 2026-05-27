@@ -9,11 +9,15 @@ Pipeline для демо-вебинтерфейса по ВКР:
   артефактов — старая joblib-модель или rule-based fallback;
 - тематический классификатор (sentence-transformers + центроиды кластеров
   или keyword fallback);
-- заглушку суммаризации;
+- реальную суммаризацию через HuggingFace Transformers
+  (по умолчанию IlyaGusev/rut5_base_sum_gazeta);
 - общую функцию analyze(text) -> dict (JSON-совместимый).
 
-Все модели опциональны — если артефакты не лежат в ./models/, будут
-использованы mock/fallback ветки, чтобы webapp запустился на пустом VPS.
+Артефакты ищутся сначала в локальной папке `models/`, затем — в подключённом
+Google Drive по пути
+`/content/drive/MyDrive/russian-dialogue-intent-thesis/models/...`.
+Все модели опциональны — если артефакты не лежат ни локально, ни на Drive,
+включаются rule-based ветки, чтобы webapp запустился даже на пустом VPS.
 """
 
 from __future__ import annotations
@@ -43,14 +47,54 @@ _ARTIFACTS: Dict[str, Any] = {
     # single-task RuBERT runtime (notebook 11)
     "torch_intent_runtime": None,        # SingleTaskIntentModelRuntime instance after lazy build
     "torch_intent_state_path": None,     # путь к .pt, обнаруженный при load_artifacts
+    "torch_intent_state_source": None,   # "local" | "google_drive"
     "torch_intent_config": None,         # dict из multitask_config.json (если есть)
+    "torch_intent_config_source": None,
+    "torch_intent_label_encoder_source": None,
     "torch_intent_load_error": None,     # последнее предупреждение при загрузке
     "torch_intent_attempted": False,     # уже пытались lazy-build
+    # summarization
+    "summarizer_model": None,
+    "summarizer_tokenizer": None,
+    "summarizer_attempted": False,
+    "summarizer_source": None,           # "local" | "google_drive" | "huggingface_hub"
+    "summarizer_path_or_name": None,
+    "summarizer_load_error": None,
+    "summarizer_device": None,
     "loaded": False,
     "models_dir": None,
+    "drive_multitask_dir": None,
+    "drive_summarization_dir": None,
+    "drive_available": False,
 }
 
 _WHISPER_MODEL = None  # ленивая загрузка
+
+
+# ---------------------------------------------------------------------------
+# Google Drive discovery
+# ---------------------------------------------------------------------------
+
+PROJECT_DRIVE_DIR_DEFAULT = "/content/drive/MyDrive/russian-dialogue-intent-thesis"
+
+
+def _project_drive_dir() -> Path:
+    return Path(os.environ.get("PROJECT_DRIVE_DIR", PROJECT_DRIVE_DIR_DEFAULT))
+
+
+def _drive_multitask_dir() -> Path:
+    explicit = os.environ.get("DRIVE_MULTITASK_MODELS_DIR")
+    if explicit:
+        return Path(explicit)
+    return _project_drive_dir() / "models" / "multitask_intent_topic"
+
+
+def _drive_summarization_dirs() -> List[Path]:
+    explicit = os.environ.get("DRIVE_SUMMARIZATION_DIR")
+    if explicit:
+        return [Path(explicit)]
+    base = _project_drive_dir() / "models"
+    return [base / "summarization", base / "summarizer"]
 
 
 # ---------------------------------------------------------------------------
@@ -171,11 +215,52 @@ def _env_flag(name: str, default: bool = True) -> bool:
     return val.strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
+def _safe_dir_exists(path: Path) -> bool:
+    try:
+        return path.exists() and path.is_dir()
+    except OSError:
+        return False
+
+
+def _resolve_artifact(filename: str, search_dirs: List[Path]) -> Optional[Path]:
+    """Возвращает первый существующий путь к артефакту в порядке search_dirs."""
+    for d in search_dirs:
+        try:
+            candidate = d / filename
+            if candidate.exists() and candidate.is_file():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
+def _source_label(path: Path, local_dir: Path, drive_dir: Path) -> str:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path
+    try:
+        if resolved.is_relative_to(local_dir.resolve()):
+            return "local"
+    except (AttributeError, OSError, ValueError):
+        # is_relative_to is Python 3.9+; fall back to string comparison
+        if str(resolved).startswith(str(local_dir)):
+            return "local"
+    if str(resolved).startswith(str(drive_dir)):
+        return "google_drive"
+    return "local" if str(resolved).startswith(str(local_dir)) else "external"
+
+
 def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
     """Загружает опциональные артефакты моделей.
 
     Никогда не падает — при отсутствии файлов соответствующие ключи остаются
     None, и downstream-функции переходят в fallback-режим.
+
+    Порядок поиска для intent-артефактов:
+      1. локальная папка `models_dir`;
+      2. Google Drive: `$DRIVE_MULTITASK_MODELS_DIR`
+         (по умолчанию `$PROJECT_DRIVE_DIR/models/multitask_intent_topic`).
 
     Сам тяжёлый PyTorch-encoder (`single_task_intent_model.pt`) здесь не
     инициализируется: на этом этапе мы только обнаруживаем файлы и читаем
@@ -185,36 +270,57 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
     быстрым.
     """
     models_path = Path(models_dir)
-    _ARTIFACTS["models_dir"] = str(models_path.resolve())
+    _ARTIFACTS["models_dir"] = str(models_path.resolve()) if models_path.exists() else str(models_path)
+
+    drive_multitask = _drive_multitask_dir()
+    _ARTIFACTS["drive_multitask_dir"] = str(drive_multitask)
+    _ARTIFACTS["drive_summarization_dir"] = [str(p) for p in _drive_summarization_dirs()]
+    _ARTIFACTS["drive_available"] = _safe_dir_exists(_project_drive_dir())
+
+    search_dirs: List[Path] = [models_path]
+    if _safe_dir_exists(drive_multitask):
+        search_dirs.append(drive_multitask)
+
+    local_resolved = models_path.resolve() if models_path.exists() else models_path
 
     # intent label encoder (используется и старым joblib-pipeline, и новым torch runtime)
-    intent_label_path = models_path / "intent_label_encoder.joblib"
-    if intent_label_path.exists():
+    intent_label_path = _resolve_artifact("intent_label_encoder.joblib", search_dirs)
+    if intent_label_path is not None:
         try:
             import joblib  # noqa: WPS433
             _ARTIFACTS["intent_label_encoder"] = joblib.load(intent_label_path)
-            logger.info("Загружен intent_label_encoder.joblib")
+            _ARTIFACTS["torch_intent_label_encoder_source"] = _source_label(
+                intent_label_path, local_resolved, drive_multitask,
+            )
+            logger.info(
+                "Загружен intent_label_encoder.joblib (%s: %s)",
+                _ARTIFACTS["torch_intent_label_encoder_source"], intent_label_path,
+            )
         except Exception as exc:  # pragma: no cover
             logger.warning("Не удалось загрузить intent_label_encoder.joblib: %s", exc)
 
     # старый sklearn-style intent_model (оставлен для обратной совместимости)
-    intent_model_path = models_path / "intent_model.joblib"
-    if intent_model_path.exists():
+    intent_model_path = _resolve_artifact("intent_model.joblib", search_dirs)
+    if intent_model_path is not None:
         try:
             import joblib  # noqa: WPS433
             _ARTIFACTS["intent_model"] = joblib.load(intent_model_path)
-            logger.info("Загружен intent_model.joblib")
+            logger.info("Загружен intent_model.joblib: %s", intent_model_path)
         except Exception as exc:  # pragma: no cover - зависит от артефактов
             logger.warning("Не удалось загрузить intent_model.joblib: %s", exc)
 
     # multitask config из ноутбука 11
-    config_path = models_path / "multitask_config.json"
-    if config_path.exists():
+    config_path = _resolve_artifact("multitask_config.json", search_dirs)
+    if config_path is not None:
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 _ARTIFACTS["torch_intent_config"] = json.load(f)
+            _ARTIFACTS["torch_intent_config_source"] = _source_label(
+                config_path, local_resolved, drive_multitask,
+            )
             logger.info(
-                "Загружен multitask_config.json: model_name=%s, num_intents=%s",
+                "Загружен multitask_config.json (%s): model_name=%s, num_intents=%s",
+                _ARTIFACTS["torch_intent_config_source"],
                 _ARTIFACTS["torch_intent_config"].get("model_name"),
                 _ARTIFACTS["torch_intent_config"].get("num_intents"),
             )
@@ -223,17 +329,20 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
 
     # single-task RuBERT state_dict (notebook 11, best модель)
     intent_state_file = os.environ.get("INTENT_MODEL_FILE", "single_task_intent_model.pt")
-    intent_state_path = models_path / intent_state_file
-    if intent_state_path.exists():
+    intent_state_path = _resolve_artifact(intent_state_file, search_dirs)
+    if intent_state_path is not None:
         _ARTIFACTS["torch_intent_state_path"] = str(intent_state_path.resolve())
+        _ARTIFACTS["torch_intent_state_source"] = _source_label(
+            intent_state_path, local_resolved, drive_multitask,
+        )
         logger.info(
-            "Обнаружен single-task RuBERT state_dict: %s (lazy-load при первом predict_intent)",
-            intent_state_path.name,
+            "Обнаружен single-task RuBERT state_dict (%s): %s (lazy-load при первом predict_intent)",
+            _ARTIFACTS["torch_intent_state_source"], intent_state_path,
         )
 
     # topic centroids
-    centroids_path = models_path / "topic_centroids.npy"
-    if centroids_path.exists():
+    centroids_path = _resolve_artifact("topic_centroids.npy", search_dirs)
+    if centroids_path is not None:
         try:
             _ARTIFACTS["topic_centroids"] = np.load(centroids_path)
             logger.info("Загружен topic_centroids.npy: shape=%s", _ARTIFACTS["topic_centroids"].shape)
@@ -241,8 +350,8 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
             logger.warning("Не удалось загрузить topic_centroids.npy: %s", exc)
 
     # topic metadata
-    meta_path = models_path / "topic_metadata.parquet"
-    if meta_path.exists():
+    meta_path = _resolve_artifact("topic_metadata.parquet", search_dirs)
+    if meta_path is not None:
         try:
             import pandas as pd  # noqa: WPS433
             _ARTIFACTS["topic_metadata"] = pd.read_parquet(meta_path)
@@ -270,18 +379,47 @@ def get_artifact_status() -> Dict[str, Any]:
     else:
         intent_mode = "rule_based_fallback"
 
+    intent_state_source = _ARTIFACTS.get("torch_intent_state_source") or (
+        "missing" if not has_torch_state else "unknown"
+    )
+
+    summarization_enabled = _env_flag("ENABLE_SUMMARIZATION", True)
+    summarizer_loaded = _ARTIFACTS.get("summarizer_model") is not None
+    summary_source = _ARTIFACTS.get("summarizer_source")
+    if not summarization_enabled:
+        summary_mode = "disabled"
+    elif _ARTIFACTS.get("summarizer_load_error"):
+        summary_mode = "error"
+    elif summarizer_loaded:
+        summary_mode = "transformers_seq2seq"
+    else:
+        summary_mode = "pending_lazy_load"
+
     return {
         "models_dir": _ARTIFACTS.get("models_dir"),
+        "drive_available": _ARTIFACTS.get("drive_available", False),
+        "drive_multitask_dir": _ARTIFACTS.get("drive_multitask_dir"),
+        "drive_summarization_dirs": _ARTIFACTS.get("drive_summarization_dir"),
         "torch_intent_enabled": enabled,
         "torch_intent_state_found": has_torch_state,
         "torch_intent_state_path": _ARTIFACTS.get("torch_intent_state_path"),
+        "torch_intent_state_source": intent_state_source,
         "intent_label_encoder_found": has_encoder,
+        "intent_label_encoder_source": _ARTIFACTS.get("torch_intent_label_encoder_source"),
         "multitask_config_found": has_config,
+        "multitask_config_source": _ARTIFACTS.get("torch_intent_config_source"),
         "torch_intent_runtime_loaded": runtime_loaded,
         "torch_intent_load_error": _ARTIFACTS.get("torch_intent_load_error"),
         "intent_mode_planned": intent_mode,
         "topic_centroids_found": _ARTIFACTS.get("topic_centroids") is not None,
         "topic_metadata_found": _ARTIFACTS.get("topic_metadata") is not None,
+        "summarization_enabled": summarization_enabled,
+        "summarizer_loaded": summarizer_loaded,
+        "summarizer_source": summary_source,
+        "summarizer_path_or_name": _ARTIFACTS.get("summarizer_path_or_name"),
+        "summarizer_device": _ARTIFACTS.get("summarizer_device"),
+        "summarizer_load_error": _ARTIFACTS.get("summarizer_load_error"),
+        "summary_mode": summary_mode,
     }
 
 
@@ -784,14 +922,167 @@ def predict_topic(text: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Summarization
+# Summarization (HuggingFace Transformers, ленивая загрузка)
 # ---------------------------------------------------------------------------
 
+_DEFAULT_SUMMARIZATION_MODEL = "IlyaGusev/rut5_base_sum_gazeta"
+
+
+def _summarizer_local_dirs() -> List[Path]:
+    """Локальные кандидаты для папки суммаризатора."""
+    candidates: List[Path] = []
+    explicit = os.environ.get("SUMMARIZATION_LOCAL_DIR")
+    if explicit:
+        candidates.append(Path(explicit))
+    models_dir = Path(_ARTIFACTS.get("models_dir") or os.environ.get("MODELS_DIR", "models"))
+    candidates.append(models_dir / "summarizer")
+    candidates.append(models_dir / "summarization")
+    return candidates
+
+
+def _resolve_summarizer_source() -> Dict[str, Any]:
+    """Определяет, откуда грузить summarizer: локально / Drive / HF Hub.
+
+    Возвращает dict с ключами `path_or_name`, `source`.
+    """
+    # 1) локальная папка
+    for d in _summarizer_local_dirs():
+        try:
+            if d.exists() and (d / "config.json").exists():
+                return {"path_or_name": str(d.resolve()), "source": "local"}
+        except OSError:
+            continue
+    # 2) Google Drive
+    for d in _drive_summarization_dirs():
+        try:
+            if d.exists() and (d / "config.json").exists():
+                return {"path_or_name": str(d), "source": "google_drive"}
+        except OSError:
+            continue
+    # 3) HuggingFace Hub
+    model_name = os.environ.get("SUMMARIZATION_MODEL_NAME", _DEFAULT_SUMMARIZATION_MODEL)
+    return {"path_or_name": model_name, "source": "huggingface_hub"}
+
+
+def _build_summarizer() -> bool:
+    """Ленивая инициализация summarization-модели. True при успехе."""
+    if _ARTIFACTS.get("summarizer_model") is not None:
+        return True
+    if _ARTIFACTS.get("summarizer_attempted") and _ARTIFACTS.get("summarizer_load_error"):
+        return False
+    _ARTIFACTS["summarizer_attempted"] = True
+
+    if not _env_flag("ENABLE_SUMMARIZATION", True):
+        _ARTIFACTS["summarizer_load_error"] = "ENABLE_SUMMARIZATION=false"
+        return False
+
+    resolved = _resolve_summarizer_source()
+    path_or_name = resolved["path_or_name"]
+    source = resolved["source"]
+    _ARTIFACTS["summarizer_path_or_name"] = path_or_name
+    _ARTIFACTS["summarizer_source"] = source
+
+    try:
+        import torch  # noqa: WPS433
+        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer  # noqa: WPS433
+    except Exception as exc:
+        _ARTIFACTS["summarizer_load_error"] = f"transformers/torch недоступны: {exc}"
+        logger.warning("Summarizer: %s", _ARTIFACTS["summarizer_load_error"])
+        return False
+
+    try:
+        logger.info("Summarizer: загрузка tokenizer/model из %s (source=%s)", path_or_name, source)
+        tokenizer = AutoTokenizer.from_pretrained(path_or_name)
+        model = AutoModelForSeq2SeqLM.from_pretrained(path_or_name)
+    except Exception as exc:
+        _ARTIFACTS["summarizer_load_error"] = f"load failed: {exc}"
+        logger.warning("Summarizer load_error: %s", exc)
+        return False
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    try:
+        if device == "cuda":
+            try:
+                model = model.to(device, dtype=torch.float16)
+            except Exception:
+                model = model.to(device)
+        else:
+            model = model.to(device)
+        model.eval()
+    except Exception as exc:
+        _ARTIFACTS["summarizer_load_error"] = f"device move failed: {exc}"
+        logger.warning("Summarizer device move: %s", exc)
+        return False
+
+    _ARTIFACTS["summarizer_tokenizer"] = tokenizer
+    _ARTIFACTS["summarizer_model"] = model
+    _ARTIFACTS["summarizer_device"] = device
+    _ARTIFACTS["summarizer_load_error"] = None
+    logger.info("Summarizer готов: %s on %s", path_or_name, device)
+    return True
+
+
 def summarize(text: str):
-    """Заглушка суммаризации. Возвращает кортеж (summary, status)."""
+    """Возвращает кортеж (summary, status).
+
+    Использует HuggingFace seq2seq модель (по умолчанию
+    IlyaGusev/rut5_base_sum_gazeta). При первом вызове модель грузится
+    лениво. Если суммаризация отключена через ENABLE_SUMMARIZATION=false
+    или модель не удалось загрузить, возвращает понятный статус, а не
+    демо-заглушку.
+    """
     if not text or not text.strip():
-        return None, "Суммаризация не подключена в демо-версии"
-    return None, "Суммаризация не подключена в демо-версии"
+        return None, "Пустой ввод — суммаризация не выполнена"
+
+    if not _env_flag("ENABLE_SUMMARIZATION", True):
+        return None, "Суммаризация отключена (ENABLE_SUMMARIZATION=false)"
+
+    if not _build_summarizer():
+        err = _ARTIFACTS.get("summarizer_load_error") or "неизвестная ошибка"
+        return None, f"Суммаризация недоступна: {err}"
+
+    tokenizer = _ARTIFACTS["summarizer_tokenizer"]
+    model = _ARTIFACTS["summarizer_model"]
+    device = _ARTIFACTS["summarizer_device"]
+
+    try:
+        import torch  # noqa: WPS433
+    except Exception as exc:  # pragma: no cover
+        return None, f"Суммаризация недоступна: torch отсутствует ({exc})"
+
+    max_input = int(os.environ.get("SUMMARIZATION_MAX_INPUT_TOKENS", "1024"))
+    max_new = int(os.environ.get("SUMMARIZATION_MAX_NEW_TOKENS", "96"))
+    num_beams = int(os.environ.get("SUMMARIZATION_NUM_BEAMS", "4"))
+
+    try:
+        enc = tokenizer(
+            text,
+            truncation=True,
+            max_length=max_input,
+            return_tensors="pt",
+        )
+        input_ids = enc["input_ids"].to(device)
+        attention_mask = enc.get("attention_mask")
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(device)
+        with torch.no_grad():
+            out = model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=max_new,
+                num_beams=num_beams,
+                no_repeat_ngram_size=3,
+                early_stopping=True,
+            )
+        summary = tokenizer.decode(out[0], skip_special_tokens=True).strip()
+    except Exception as exc:
+        logger.exception("Суммаризация упала: %s", exc)
+        return None, f"Ошибка суммаризации: {exc}"
+
+    source = _ARTIFACTS.get("summarizer_source")
+    path_or_name = _ARTIFACTS.get("summarizer_path_or_name")
+    status = f"Суммаризация выполнена ({source}): {path_or_name}"
+    return summary, status
 
 
 # ---------------------------------------------------------------------------

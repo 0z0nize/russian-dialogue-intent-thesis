@@ -1,7 +1,20 @@
 # Артефакты моделей
 
 В эту папку можно положить опциональные артефакты, полученные из основных
-ноутбуков ВКР. Если артефактов нет, демо запускается на rule-based fallback.
+ноутбуков ВКР. Если артефактов нет ни здесь, ни на смонтированном Google
+Drive, демо запускается на rule-based fallback.
+
+## Порядок поиска артефактов
+
+`model_pipeline.load_artifacts()` ищет файлы в следующем порядке:
+
+1. локальная папка `dialogsum_intent_webapp/models/` (этот каталог);
+2. Google Drive: `$DRIVE_MULTITASK_MODELS_DIR`, по умолчанию
+   `$PROJECT_DRIVE_DIR/models/multitask_intent_topic` =
+   `/content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/`.
+
+В UI и в `get_artifact_status()` источник отображается как
+`torch_intent_state_source = "local" | "google_drive" | "missing"`.
 
 ## Best модель из notebook 11 (по умолчанию)
 
@@ -33,6 +46,7 @@ path. Поэтому webapp по умолчанию использует **singl
 | `intent_model.joblib` | Старый sklearn pipeline (legacy). | опционально |
 | `topic_centroids.npy` | Матрица центроидов кластеров `(n_clusters, dim)` для sentence-transformers тематики. | опционально |
 | `topic_metadata.parquet` | Метаданные кластеров: `cluster_id`, `name`, `description`, `top_words`. | опционально |
+| `summarizer/` или `summarization/` | Папка с весами seq2seq суммаризатора (`config.json`, `pytorch_model.bin` / `model.safetensors`, токенизатор). Загружается через `AutoModelForSeq2SeqLM.from_pretrained(<path>)`. Также ищется на Google Drive в `$PROJECT_DRIVE_DIR/models/summarization` и `.../models/summarizer`. Если папки нет, используется HuggingFace Hub (`SUMMARIZATION_MODEL_NAME`, по умолчанию `IlyaGusev/rut5_base_sum_gazeta`). | опционально |
 
 > ⚠ Большие `.pt`/`.pickle` файлы **не коммитятся** в git
 > (см. корневой `.gitignore`). Эта папка должна остаться placeholder.
@@ -42,7 +56,11 @@ path. Поэтому webapp по умолчанию использует **singl
 Артефакты notebook 11 ожидаются здесь:
 `/content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/`
 
-После прогона notebook на Colab скопируйте файлы в `dialogsum_intent_webapp/models/`:
+Если в окружении смонтирован Google Drive (Colab/VM), копировать файлы
+**не обязательно** — `load_artifacts()` сам подхватит их из Drive. Папку
+можно переопределить через `DRIVE_MULTITASK_MODELS_DIR` или
+`PROJECT_DRIVE_DIR`. Если Drive не смонтирован — скопируйте файлы в
+`dialogsum_intent_webapp/models/`:
 
 ```bash
 cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/single_task_intent_model.pt dialogsum_intent_webapp/models/
@@ -70,6 +88,13 @@ cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent
 | `ENABLE_TORCH_INTENT_MODEL` | `true` | если `false`, single-task RuBERT runtime принудительно отключается |
 | `INTENT_MODEL_FILE` | `single_task_intent_model.pt` | имя файла state_dict в `models/` |
 | `INTENT_ENCODER_NAME` | (из `multitask_config.json`, иначе `DeepPavlov/rubert-base-cased-conversational`) | имя HuggingFace модели-энкодера |
+| `PROJECT_DRIVE_DIR` | `/content/drive/MyDrive/russian-dialogue-intent-thesis` | корень проекта на Google Drive |
+| `DRIVE_MULTITASK_MODELS_DIR` | `$PROJECT_DRIVE_DIR/models/multitask_intent_topic` | папка intent-артефактов на Drive |
+| `ENABLE_SUMMARIZATION` | `true` | если `false`, summarize() возвращает статус «отключено» |
+| `SUMMARIZATION_MODEL_NAME` | `IlyaGusev/rut5_base_sum_gazeta` | HF id, fallback если нет локальной / Drive папки |
+| `SUMMARIZATION_LOCAL_DIR` | — | явный путь к локальной папке summarizer (с `config.json`) |
+| `DRIVE_SUMMARIZATION_DIR` | — | явный путь к папке summarizer на Drive |
+| `SUMMARIZATION_MAX_INPUT_TOKENS` / `SUMMARIZATION_MAX_NEW_TOKENS` / `SUMMARIZATION_NUM_BEAMS` | `1024 / 96 / 4` | параметры генерации |
 
 ## Архитектура runtime (для совместимости state_dict)
 
@@ -102,5 +127,7 @@ State_dict должен быть сохранён из версии notebook 11 
   по словам, но разные по смыслу реплики.
 - `topic`: 10 предопределённых тем из ВКР, выбирается по совпадению ключевых
   слов; не использует эмбеддинги.
-- `summary`: всегда возвращает `None` со статусом
-  «Суммаризация не подключена в демо-версии».
+- `summary`: если `transformers`/`torch` не установлены или загрузка модели
+  упала, возвращается `None` со статусом
+  `Суммаризация недоступна: <причина>`. По умолчанию суммаризация включена
+  через HuggingFace seq2seq (см. секцию «Суммаризация» в основном README).

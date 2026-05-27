@@ -10,7 +10,7 @@
 
 - intent (намерение из 14 классов речевых актов, описанных в ВКР);
 - тематический кластер (id, название, описание, top-words);
-- статус суммаризации (заглушка в текущей демо-версии);
+- сводку (HuggingFace seq2seq, по умолчанию `IlyaGusev/rut5_base_sum_gazeta`);
 - полный JSON-ответ для отладки.
 
 ## Архитектура
@@ -26,7 +26,7 @@ audio ──► faster-whisper (lazy)
                    │
                    ├─► topic (sentence-transformers + centroids OR keyword fallback)
                    │
-                   └─► summary (заглушка)
+                   └─► summary (HuggingFace seq2seq, lazy-load)
 ```
 
 - UI: **Gradio Blocks** (две вкладки «Текст» / «Голос»), русский интерфейс.
@@ -120,10 +120,38 @@ Notebook `11_neural_multitask_intent_topic_dialogsum_ru.ipynb` сохраняе�
 - Сравнение: multi-task `lambda_topic=0.1 + coarse` даёт accuracy 0.9083 /
   macro-F1 0.7580, topic acc 0.2130, coarse topic acc 0.5134.
 
-Чтобы подключить лучшую модель к webapp:
+### Автоматическое подключение артефактов из Google Drive
+
+`model_pipeline.py` ищет файлы intent-артефактов в следующем порядке:
+
+1. локальная папка `dialogsum_intent_webapp/models/`;
+2. Google Drive: `$DRIVE_MULTITASK_MODELS_DIR`
+   (по умолчанию `$PROJECT_DRIVE_DIR/models/multitask_intent_topic`,
+   то есть `/content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/`).
+
+Если хотя бы один путь существует, артефакты подхватываются автоматически —
+копировать файлы в локальную `models/` не обязательно. В UI верхняя плашка
+показывает источник (`local` / `google_drive`) и состояние Drive.
+
+**В Colab:** перед запуском webapp смонтируйте Drive:
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+```
+
+**Локально / на VPS:** Drive не смонтирован, поэтому либо положите файлы в
+локальную `models/`, либо переопределите путь через переменные окружения:
 
 ```bash
-# из директории, где смонтирован /content/drive (например, в Colab/VM):
+export PROJECT_DRIVE_DIR=/mnt/drive/russian-dialogue-intent-thesis
+# или сразу конкретные подпапки:
+export DRIVE_MULTITASK_MODELS_DIR=/mnt/models/multitask_intent_topic
+```
+
+Альтернатива — скопировать руками:
+
+```bash
 cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/single_task_intent_model.pt dialogsum_intent_webapp/models/
 cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/intent_label_encoder.joblib dialogsum_intent_webapp/models/
 cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/multitask_config.json dialogsum_intent_webapp/models/
@@ -137,6 +165,36 @@ cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent
 > (корневой `.gitignore`). Папка `models/` в репозитории остаётся
 > placeholder с `.gitkeep` и `README.md`.
 
+## Суммаризация
+
+Суммаризация **включена по умолчанию** (`ENABLE_SUMMARIZATION=true`) и
+выполняется через HuggingFace `AutoModelForSeq2SeqLM`. Модель грузится
+лениво при первом обращении к `summarize()`/`analyze()`.
+
+Порядок поиска весов суммаризатора:
+
+1. локальная папка с `config.json`: `$SUMMARIZATION_LOCAL_DIR` →
+   `models/summarizer` → `models/summarization`;
+2. Google Drive: `$DRIVE_SUMMARIZATION_DIR` →
+   `$PROJECT_DRIVE_DIR/models/summarization` →
+   `$PROJECT_DRIVE_DIR/models/summarizer`;
+3. HuggingFace Hub: `$SUMMARIZATION_MODEL_NAME` (по умолчанию
+   `IlyaGusev/rut5_base_sum_gazeta`).
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `ENABLE_SUMMARIZATION` | `true` | если `false`, статус будет «Суммаризация отключена» |
+| `SUMMARIZATION_MODEL_NAME` | `IlyaGusev/rut5_base_sum_gazeta` | HF id, используется если локально / в Drive модели нет |
+| `SUMMARIZATION_LOCAL_DIR` | — | явный путь к локальной папке summarizer (с `config.json`) |
+| `DRIVE_SUMMARIZATION_DIR` | — | явный путь к папке summarizer на Drive |
+| `SUMMARIZATION_MAX_INPUT_TOKENS` | `1024` | обрезка входа по токенам |
+| `SUMMARIZATION_MAX_NEW_TOKENS` | `96` | длина генерации |
+| `SUMMARIZATION_NUM_BEAMS` | `4` | beam search |
+
+> ⚠ Первый вызов может скачивать веса с HuggingFace (rut5-base ≈ 850 MB) и
+> занимать минуту-другую. GPU рекомендуется, на CPU суммаризация работает,
+> но заметно медленнее.
+
 ### Переменные окружения для intent-модели
 
 | Переменная | По умолчанию | Назначение |
@@ -144,7 +202,9 @@ cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent
 | `ENABLE_TORCH_INTENT_MODEL` | `true` | если `false`, single-task RuBERT runtime отключён принудительно |
 | `INTENT_MODEL_FILE` | `single_task_intent_model.pt` | имя файла state_dict в `models/` |
 | `INTENT_ENCODER_NAME` | (из `multitask_config.json`, иначе `DeepPavlov/rubert-base-cased-conversational`) | имя HuggingFace модели-энкодера |
-| `MODELS_DIR` | `models` | путь к артефактам |
+| `MODELS_DIR` | `models` | путь к локальным артефактам |
+| `PROJECT_DRIVE_DIR` | `/content/drive/MyDrive/russian-dialogue-intent-thesis` | корень проекта на Google Drive |
+| `DRIVE_MULTITASK_MODELS_DIR` | `$PROJECT_DRIVE_DIR/models/multitask_intent_topic` | папка с artefacts ноутбука 11 на Drive |
 
 ### Дополнительные опциональные артефакты
 
@@ -177,8 +237,10 @@ cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent
 - Topic fallback — 10 заранее заданных тем из ВКР: развлечения, музыкальные
   события, дом, жалоба, образование, поиск книг, путешествия, работа,
   собеседование, ремонт/обслуживание. Выбор по совпадению ключевых слов.
-- Summary — всегда `None` со статусом
-  «Суммаризация не подключена в демо-версии».
+- Summary — если `transformers`/`torch` недоступны или модель не удалось
+  скачать, возвращается `None` со статусом
+  `Суммаризация недоступна: <причина>`. Через
+  `ENABLE_SUMMARIZATION=false` суммаризацию можно явно отключить.
 
 ## API analyze()
 
@@ -204,8 +266,14 @@ analyze("Здравствуйте, я хочу забронировать бил
 #   "topic_cluster_id": 6,
 #   "topic_cluster_name": "путешествия",
 #   ...
-#   "summary": None,
-#   "summary_status": "Суммаризация не подключена в демо-версии",
-#   "artifact_status": {...},
+#   "summary": "...",
+#   "summary_status": "Суммаризация выполнена (huggingface_hub): IlyaGusev/rut5_base_sum_gazeta",
+#   "artifact_status": {
+#       "drive_available": True / False,
+#       "torch_intent_state_source": "local" | "google_drive" | "missing",
+#       "summary_mode": "transformers_seq2seq" | "disabled" | "error" | "pending_lazy_load",
+#       "summarizer_source": "local" | "google_drive" | "huggingface_hub",
+#       ...
+#   },
 # }
 ```
