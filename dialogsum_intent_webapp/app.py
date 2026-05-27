@@ -172,6 +172,43 @@ def analyze_text(text: str):
     return _result_tuple(result)
 
 
+UTTERANCE_TABLE_HEADERS = [
+    "№",
+    "Говорящий",
+    "Реплика",
+    "Интент",
+    "Уверенность",
+    "Top-3",
+]
+
+
+def _utterance_rows(items):
+    rows = []
+    for item in items or []:
+        conf = item.get("intent_confidence")
+        rows.append(
+            [
+                item.get("utterance_id"),
+                item.get("speaker") or "",
+                item.get("utterance_text") or "",
+                item.get("intent_label") or "",
+                round(float(conf), 3) if conf is not None else 0.0,
+                item.get("intent_topk_str") or "",
+            ]
+        )
+    return rows
+
+
+def analyze_text_utterances(text: str):
+    """Парсит диалог и анализирует intent по каждой реплике."""
+    try:
+        items = mp.analyze_utterances(text or "")
+    except Exception as exc:
+        logger.exception("analyze_utterances ошибка: %s", exc)
+        return [[0, "", f"[Ошибка: {exc}]", "", 0.0, ""]], []
+    return _utterance_rows(items), items
+
+
 def analyze_audio(audio_path: str):
     if not audio_path:
         return ("",) + _empty_result_tuple()
@@ -328,18 +365,35 @@ def build_demo() -> gr.Blocks:
                 with gr.Row():
                     with gr.Column(scale=3):
                         text_input = gr.Textbox(
-                            label="Введите реплику или короткий диалог",
-                            placeholder="Например: Здравствуйте, я хочу забронировать билет на концерт в Москве.",
-                            lines=6,
+                            label="Введите реплику или диалог",
+                            placeholder=(
+                                "Одна реплика: «Здравствуйте, я хочу забронировать билет.»\n"
+                                "Или диалог в формате DialogSum-RU:\n"
+                                "#Person1#: Привет, как дела?\n"
+                                "#Person2#: Нормально, готовлюсь к собеседованию."
+                            ),
+                            lines=8,
+                        )
+                        gr.Markdown(
+                            "<span class='small-note'>Текущая модель — single-task RuBERT, "
+                            "обученная на одиночных репликах. Для длинных диалогов "
+                            "DialogSum-RU выбирайте режим <b>«По репликам»</b> — "
+                            "тогда intent предсказывается для каждой реплики отдельно. "
+                            "Режим <b>«Весь текст»</b> возвращает один доминирующий intent.</span>"
                         )
                         with gr.Row():
-                            text_btn = gr.Button("Анализировать", variant="primary")
+                            text_btn = gr.Button("Анализировать как один текст", variant="primary")
+                            text_utt_btn = gr.Button("Анализировать по репликам", variant="primary")
                             text_clear_btn = gr.Button("Очистить", variant="secondary")
                         gr.HTML(TEST_THEMES_HTML)
                         gr.Markdown(
                             "<span class='small-note'>Поле <b>Intent mode</b> ниже показывает, "
                             "какой модуль обработал реплику: <code>single_task_rubert_model</code> "
-                            "(обученные артефакты проекта) или <code>rule_based_fallback</code>.</span>"
+                            "(обученные артефакты проекта) или <code>rule_based_fallback</code>. "
+                            "Парсер диалога понимает теги <code>#Person1#:</code> / "
+                            "<code>#Person2#:</code>, а также <code>Говорящий 1:</code>, "
+                            "<code>Спикер 2:</code>. Если тегов нет — режим «По репликам» "
+                            "режет ввод по непустым строкам.</span>"
                         )
                     with gr.Column(scale=4):
                         t_intent = gr.Textbox(label="Intent (намерение)")
@@ -352,6 +406,16 @@ def build_demo() -> gr.Blocks:
                         t_topic_words = gr.Textbox(label="Top words")
                         t_summary = gr.Textbox(label="Summary / статус", lines=2)
                         t_json = gr.JSON(label="Полный JSON-ответ", elem_id="json-out")
+                        t_utt_table = gr.Dataframe(
+                            headers=UTTERANCE_TABLE_HEADERS,
+                            datatype=["number", "str", "str", "str", "number", "str"],
+                            label="Анализ по репликам (DialogSum-RU)",
+                            wrap=True,
+                            interactive=False,
+                        )
+                        t_utt_json = gr.JSON(
+                            label="Реплики (JSON, для отладки)", elem_id="json-out"
+                        )
 
                 text_outputs = [
                     t_intent,
@@ -364,6 +428,7 @@ def build_demo() -> gr.Blocks:
                     t_summary,
                     t_json,
                 ]
+                text_utt_outputs = [t_utt_table, t_utt_json]
 
                 text_btn.click(
                     analyze_text,
@@ -371,10 +436,16 @@ def build_demo() -> gr.Blocks:
                     outputs=text_outputs,
                 )
 
+                text_utt_btn.click(
+                    analyze_text_utterances,
+                    inputs=[text_input],
+                    outputs=text_utt_outputs,
+                )
+
                 text_clear_btn.click(
-                    lambda: ("",) + _empty_result_tuple(),
+                    lambda: ("",) + _empty_result_tuple() + ([], None),
                     inputs=None,
-                    outputs=[text_input] + text_outputs,
+                    outputs=[text_input] + text_outputs + text_utt_outputs,
                 )
 
             # ---------------- Tab 2: Голос ----------------

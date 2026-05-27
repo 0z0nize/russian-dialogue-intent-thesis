@@ -1063,6 +1063,122 @@ def summarize(text: str):
 # Главная функция analyze
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Парсинг диалога на реплики (DialogSum / DialogSum-RU формат)
+# ---------------------------------------------------------------------------
+
+# Распознаём теги вида `#Person1#:`, `#Person2#:`, ..., а также частые
+# русские варианты ("Говорящий1:", "Спикер2:", "Собеседник 1:") и формат
+# без решёток ("Person1:"). Регистр игнорируется.
+_SPEAKER_TAG_RE = re.compile(
+    r"(?im)"
+    r"(?P<tag>"
+    r"#\s*(?:person|speaker|p|спикер|говорящий|собеседник|участник)\s*\d+\s*#"
+    r"|(?:person|speaker|спикер|говорящий|собеседник|участник)\s*\d+"
+    r")"
+    r"\s*[:\-—]\s*"
+)
+
+
+def parse_dialogue(text: str) -> List[Dict[str, Any]]:
+    """Разбивает диалог на реплики.
+
+    Поддерживает теги DialogSum/DialogSum-RU (``#Person1#:`` ...), а также
+    варианты вида ``Person1:``, ``Говорящий 1:``, ``Спикер2:``. Если теги
+    спикеров не найдены, делит вход по непустым строкам (``speaker = ""``).
+
+    Returns:
+        Список словарей ``{utterance_id, speaker, utterance_text}``.
+    """
+    if not text or not text.strip():
+        return []
+
+    matches = list(_SPEAKER_TAG_RE.finditer(text))
+    utterances: List[Dict[str, Any]] = []
+
+    if matches:
+        for idx, m in enumerate(matches):
+            speaker_raw = m.group("tag")
+            speaker = re.sub(r"[#\s]+", " ", speaker_raw).strip()
+            start = m.end()
+            end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+            utt = text[start:end].strip()
+            if not utt:
+                continue
+            utterances.append(
+                {
+                    "utterance_id": len(utterances) + 1,
+                    "speaker": speaker,
+                    "utterance_text": utt,
+                }
+            )
+        if utterances:
+            return utterances
+
+    # Fallback: разбиваем по непустым строкам.
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        utterances.append(
+            {
+                "utterance_id": len(utterances) + 1,
+                "speaker": "",
+                "utterance_text": line,
+            }
+        )
+
+    # Если вход — одна строка без переносов, возвращаем как одну реплику.
+    if not utterances:
+        utterances.append(
+            {
+                "utterance_id": 1,
+                "speaker": "",
+                "utterance_text": text.strip(),
+            }
+        )
+    return utterances
+
+
+def analyze_utterances(text: str) -> List[Dict[str, Any]]:
+    """Парсит диалог и предсказывает intent для каждой реплики.
+
+    Переиспользует уже загруженные артефакты (intent runtime, encoder),
+    поэтому модели НЕ перезагружаются на каждой реплике.
+    """
+    utterances = parse_dialogue(text or "")
+    results: List[Dict[str, Any]] = []
+    for utt in utterances:
+        try:
+            intent = predict_intent(utt["utterance_text"])
+        except Exception as exc:
+            logger.exception("predict_intent (utterance) ошибка: %s", exc)
+            intent = {
+                "label": "other",
+                "confidence": 0.0,
+                "mode": f"error: {exc}",
+                "topk": None,
+            }
+        topk = intent.get("topk") or []
+        top2 = "; ".join(
+            f"{t['label']} ({float(t['confidence']):.2f})"
+            for t in topk[:3]
+        )
+        results.append(
+            {
+                "utterance_id": utt["utterance_id"],
+                "speaker": utt["speaker"],
+                "utterance_text": utt["utterance_text"],
+                "intent_label": intent.get("label"),
+                "intent_confidence": intent.get("confidence"),
+                "intent_mode": intent.get("mode"),
+                "intent_topk": topk,
+                "intent_topk_str": top2,
+            }
+        )
+    return results
+
+
 def analyze(text: str) -> Dict[str, Any]:
     """Полный анализ текста: intent + topic + summary."""
     text = (text or "").strip()
