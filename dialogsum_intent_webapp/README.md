@@ -20,7 +20,7 @@ audio ──► faster-whisper (lazy)
                 │
                 ▼
             текст ──► intent
-                   │     ├── single-task RuBERT runtime (notebook 11, BEST) — по умолчанию
+                   │     ├── single-task RuBERT runtime (обученные артефакты проекта, BEST) — по умолчанию
                    │     ├── sklearn intent_model.joblib (legacy)
                    │     └── rule-based fallback
                    │
@@ -34,11 +34,11 @@ audio ──► faster-whisper (lazy)
   (`single_task_rubert_model` / `sklearn_intent_model` / `rule_based_fallback`),
   тот же режим дублируется в результатах под каждой репликой.
 - STT: **faster-whisper** (русский язык, ленивая загрузка модели).
-- Intent: лучшая модель — single-task RuBERT из ноутбука 11
+- Intent: лучшая модель — single-task RuBERT
   (`DeepPavlov/rubert-base-cased-conversational`, accuracy 0.9126, macro-F1 0.7770).
   При отсутствии артефактов включается rule-based fallback.
 - Topic: пока остаётся в режиме centroids/keyword fallback —
-  multi-task topic head из ноутбука 11 даёт topic accuracy ~0.21 (fine) и
+  multi-task topic head даёт topic accuracy ~0.21 (fine) и
   ~0.51 (coarse), что хуже отдельной кластерной пайплайны.
 - Без платных внешних API.
 
@@ -69,6 +69,15 @@ python app.py
 ```
 
 Откроется на `http://127.0.0.1:7860`.
+
+> ⚠ При первом запуске приложение скачает обученные артефакты из
+> публичного репозитория Hugging Face Hub
+> (`ozonize/dialogsum-ru-intent-rubert`, ≈714 МБ для
+> `single_task_intent_model.pt`). Файлы кэшируются в `~/.cache/huggingface`
+> и при повторных запусках уже не качаются. Если этот трафик нежелателен,
+> положите файлы вручную в `dialogsum_intent_webapp/models/` или отключите
+> загрузку через `ENABLE_HF_DOWNLOAD=false` (UI перейдёт в rule-based
+> fallback).
 
 ## Запуск на VPS по публичному IP
 
@@ -101,15 +110,32 @@ docker compose up --build -d
 - `SENTENCE_MODEL` — модель эмбеддингов для тематики
   (по умолчанию `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`).
 - `MODELS_DIR` — путь к артефактам внутри контейнера (`/app/models`).
+- `HF_INTENT_REPO_ID` — HF-репозиторий с артефактами интентов
+  (по умолчанию `ozonize/dialogsum-ru-intent-rubert`).
+- `HF_TOKEN` — токен Hugging Face, нужен только для приватных репозиториев.
 
 Папка `models/` хоста монтируется в контейнер, так что артефакты можно
-обновлять без пересборки образа.
+обновлять без пересборки образа. HF-кэш хранится в named-volume
+`hf_cache`, чтобы веса не качались при каждом запуске.
 
-## Подключение лучшей модели из notebook 11
+## Подключение артефактов из Hugging Face Hub
 
-Notebook `11_neural_multitask_intent_topic_dialogsum_ru.ipynb` сохраняет
-артефакты в Google Drive:
-`/content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/`
+Артефакты обученной модели опубликованы в публичном репозитории
+**[`ozonize/dialogsum-ru-intent-rubert`](https://huggingface.co/ozonize/dialogsum-ru-intent-rubert)**.
+Репозиторий содержит как минимум:
+
+- `single_task_intent_model.pt` — state_dict best single-task модели
+  (encoder + proj + intent_head);
+- `intent_label_encoder.joblib` — `sklearn.preprocessing.LabelEncoder`
+  с классами интентов в порядке `intent_head`;
+- `multitask_config.json` — конфиг архитектуры (`model_name`, `max_len`,
+  `num_intents`);
+- `multitask_intent_topic_model.pt` — state_dict multi-task модели
+  (опционально, future extension);
+- `topic_label_encoder.joblib`, `coarse_topic_label_encoder.joblib` —
+  кодировщики тем (fine / coarse);
+- содержимое каталогов `results/` и `figures/` (метрики и визуализации
+  из обучающих ноутбуков).
 
 Лучший по итогам последнего прогона режим — **single-task RuBERT**
 (`DeepPavlov/rubert-base-cased-conversational`):
@@ -120,45 +146,30 @@ Notebook `11_neural_multitask_intent_topic_dialogsum_ru.ipynb` сохраняе�
 - Сравнение: multi-task `lambda_topic=0.1 + coarse` даёт accuracy 0.9083 /
   macro-F1 0.7580, topic acc 0.2130, coarse topic acc 0.5134.
 
-### Автоматическое подключение артефактов из Google Drive
+### Автоматическая загрузка с Hugging Face Hub
 
 `model_pipeline.py` ищет файлы intent-артефактов в следующем порядке:
 
 1. локальная папка `dialogsum_intent_webapp/models/`;
-2. Google Drive: `$DRIVE_MULTITASK_MODELS_DIR`
-   (по умолчанию `$PROJECT_DRIVE_DIR/models/multitask_intent_topic`,
-   то есть `/content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/`).
+2. Hugging Face Hub — репозиторий из `$HF_INTENT_REPO_ID`
+   (по умолчанию `ozonize/dialogsum-ru-intent-rubert`).
 
-Если хотя бы один путь существует, артефакты подхватываются автоматически —
-копировать файлы в локальную `models/` не обязательно. В UI верхняя плашка
-показывает источник (`local` / `google_drive`) и состояние Drive.
+Если файлов нет локально, они автоматически скачиваются через
+`huggingface_hub.hf_hub_download` в локальный кэш (`~/.cache/huggingface`
+или `$HF_HOME`). В UI верхняя плашка показывает источник
+(`local` / `huggingface_hub`) и используемый репозиторий.
 
-**В Colab:** перед запуском webapp смонтируйте Drive:
-
-```python
-from google.colab import drive
-drive.mount('/content/drive')
-```
-
-**Локально / на VPS:** Drive не смонтирован, поэтому либо положите файлы в
-локальную `models/`, либо переопределите путь через переменные окружения:
+Альтернатива — скачать руками заранее:
 
 ```bash
-export PROJECT_DRIVE_DIR=/mnt/drive/russian-dialogue-intent-thesis
-# или сразу конкретные подпапки:
-export DRIVE_MULTITASK_MODELS_DIR=/mnt/models/multitask_intent_topic
-```
-
-Альтернатива — скопировать руками:
-
-```bash
-cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/single_task_intent_model.pt dialogsum_intent_webapp/models/
-cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/intent_label_encoder.joblib dialogsum_intent_webapp/models/
-cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/multitask_config.json dialogsum_intent_webapp/models/
+huggingface-cli download ozonize/dialogsum-ru-intent-rubert \
+    single_task_intent_model.pt intent_label_encoder.joblib multitask_config.json \
+    --local-dir dialogsum_intent_webapp/models
 ```
 
 После этого `python app.py` поднимет интерфейс в режиме
-`single_task_rubert_model`. Сам HuggingFace-энкодер (~700 МБ) скачивается
+`single_task_rubert_model`. Сам HuggingFace-энкодер
+(`DeepPavlov/rubert-base-cased-conversational`, ~700 МБ) скачивается
 лениво при первом запросе, поэтому старт UI остаётся быстрым.
 
 > ⚠ Большие `.pt`/`.bin`/`.pickle` артефакты **не коммитятся** в git
@@ -175,18 +186,14 @@ cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent
 
 1. локальная папка с `config.json`: `$SUMMARIZATION_LOCAL_DIR` →
    `models/summarizer` → `models/summarization`;
-2. Google Drive: `$DRIVE_SUMMARIZATION_DIR` →
-   `$PROJECT_DRIVE_DIR/models/summarization` →
-   `$PROJECT_DRIVE_DIR/models/summarizer`;
-3. HuggingFace Hub: `$SUMMARIZATION_MODEL_NAME` (по умолчанию
+2. HuggingFace Hub: `$SUMMARIZATION_MODEL_NAME` (по умолчанию
    `IlyaGusev/rut5_base_sum_gazeta`).
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
 | `ENABLE_SUMMARIZATION` | `true` | если `false`, статус будет «Суммаризация отключена» |
-| `SUMMARIZATION_MODEL_NAME` | `IlyaGusev/rut5_base_sum_gazeta` | HF id, используется если локально / в Drive модели нет |
+| `SUMMARIZATION_MODEL_NAME` | `IlyaGusev/rut5_base_sum_gazeta` | HF id, используется если локальной модели нет |
 | `SUMMARIZATION_LOCAL_DIR` | — | явный путь к локальной папке summarizer (с `config.json`) |
-| `DRIVE_SUMMARIZATION_DIR` | — | явный путь к папке summarizer на Drive |
 | `SUMMARIZATION_MAX_INPUT_TOKENS` | `1024` | обрезка входа по токенам |
 | `SUMMARIZATION_MAX_NEW_TOKENS` | `96` | длина генерации |
 | `SUMMARIZATION_NUM_BEAMS` | `4` | beam search |
@@ -200,11 +207,12 @@ cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
 | `ENABLE_TORCH_INTENT_MODEL` | `true` | если `false`, single-task RuBERT runtime отключён принудительно |
-| `INTENT_MODEL_FILE` | `single_task_intent_model.pt` | имя файла state_dict в `models/` |
+| `INTENT_MODEL_FILE` | `single_task_intent_model.pt` | имя файла state_dict в `models/` и в HF-репозитории |
 | `INTENT_ENCODER_NAME` | (из `multitask_config.json`, иначе `DeepPavlov/rubert-base-cased-conversational`) | имя HuggingFace модели-энкодера |
 | `MODELS_DIR` | `models` | путь к локальным артефактам |
-| `PROJECT_DRIVE_DIR` | `/content/drive/MyDrive/russian-dialogue-intent-thesis` | корень проекта на Google Drive |
-| `DRIVE_MULTITASK_MODELS_DIR` | `$PROJECT_DRIVE_DIR/models/multitask_intent_topic` | папка с artefacts ноутбука 11 на Drive |
+| `HF_INTENT_REPO_ID` | `ozonize/dialogsum-ru-intent-rubert` | HF-репозиторий с обученными артефактами |
+| `HF_TOKEN` / `HUGGINGFACE_HUB_TOKEN` | — | токен Hugging Face, нужен только для приватных репозиториев |
+| `ENABLE_HF_DOWNLOAD` | `true` | если `false`, загрузка с HF Hub отключена (только локальные файлы) |
 
 ### Дополнительные опциональные артефакты
 
@@ -253,6 +261,8 @@ get_artifact_status()
 #   "intent_label_encoder_found": True / False,
 #   "multitask_config_found": True / False,
 #   "intent_mode_planned": "single_task_rubert_model" | "rule_based_fallback",
+#   "hf_repo_id": "ozonize/dialogsum-ru-intent-rubert",
+#   "hf_available": True / False,
 #   ...
 # }
 
@@ -269,10 +279,10 @@ analyze("Здравствуйте, я хочу забронировать бил
 #   "summary": "...",
 #   "summary_status": "Суммаризация выполнена (huggingface_hub): IlyaGusev/rut5_base_sum_gazeta",
 #   "artifact_status": {
-#       "drive_available": True / False,
-#       "torch_intent_state_source": "local" | "google_drive" | "missing",
+#       "hf_repo_id": "ozonize/dialogsum-ru-intent-rubert",
+#       "torch_intent_state_source": "local" | "huggingface_hub" | "missing",
 #       "summary_mode": "transformers_seq2seq" | "disabled" | "error" | "pending_lazy_load",
-#       "summarizer_source": "local" | "google_drive" | "huggingface_hub",
+#       "summarizer_source": "local" | "huggingface_hub",
 #       ...
 #   },
 # }

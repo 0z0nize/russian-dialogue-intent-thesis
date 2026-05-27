@@ -1,25 +1,23 @@
 # Артефакты моделей
 
 В эту папку можно положить опциональные артефакты, полученные из основных
-ноутбуков ВКР. Если артефактов нет ни здесь, ни на смонтированном Google
-Drive, демо запускается на rule-based fallback.
+ноутбуков ВКР. Если артефактов нет ни здесь, ни в публичном Hugging Face
+репозитории — демо запускается на rule-based fallback.
 
 ## Порядок поиска артефактов
 
 `model_pipeline.load_artifacts()` ищет файлы в следующем порядке:
 
 1. локальная папка `dialogsum_intent_webapp/models/` (этот каталог);
-2. Google Drive: `$DRIVE_MULTITASK_MODELS_DIR`, по умолчанию
-   `$PROJECT_DRIVE_DIR/models/multitask_intent_topic` =
-   `/content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/`.
+2. Hugging Face Hub: `$HF_INTENT_REPO_ID`
+   (по умолчанию `ozonize/dialogsum-ru-intent-rubert`).
 
 В UI и в `get_artifact_status()` источник отображается как
-`torch_intent_state_source = "local" | "google_drive" | "missing"`.
+`torch_intent_state_source = "local" | "huggingface_hub" | "missing"`.
 
-## Best модель из notebook 11 (по умолчанию)
+## Best модель (по умолчанию)
 
-С notebook 11 (`11_neural_multitask_intent_topic_dialogsum_ru.ipynb`) лучший
-итоговый результат на DialogSum-RU дала **single-task RuBERT** модель:
+Лучший итоговый результат на DialogSum-RU дала **single-task RuBERT** модель:
 
 | Метрика | Single-task | Multi-task (λ_topic=0.1 + coarse) |
 |---|---|---|
@@ -37,46 +35,47 @@ path. Поэтому webapp по умолчанию использует **singl
 
 | Имя файла | Назначение | Обязательность |
 |-----------|------------|----------------|
-| `single_task_intent_model.pt` | `state_dict` лучшей single-task модели из notebook 11 (encoder + proj + intent_head). | для `single_task_rubert_model` режима |
+| `single_task_intent_model.pt` | `state_dict` лучшей single-task модели (encoder + proj + intent_head). | для `single_task_rubert_model` режима |
 | `intent_label_encoder.joblib` | `sklearn.preprocessing.LabelEncoder` с классами интентов (порядок индексов соответствует `intent_head`). | для `single_task_rubert_model` режима |
-| `multitask_config.json` | Конфиг запуска notebook 11: `model_name`, `max_len`, `num_intents`, классы и пр. Используется для восстановления архитектуры. | желательно |
+| `multitask_config.json` | Конфиг архитектуры: `model_name`, `max_len`, `num_intents`, классы и пр. | желательно |
 | `multitask_intent_topic_model.pt` | `state_dict` multi-task модели. | опционально (future extension) |
 | `topic_label_encoder.joblib` | LabelEncoder fine-topic классов. | опционально |
 | `coarse_topic_label_encoder.joblib` | LabelEncoder coarse-topic классов. | опционально |
 | `intent_model.joblib` | Старый sklearn pipeline (legacy). | опционально |
 | `topic_centroids.npy` | Матрица центроидов кластеров `(n_clusters, dim)` для sentence-transformers тематики. | опционально |
 | `topic_metadata.parquet` | Метаданные кластеров: `cluster_id`, `name`, `description`, `top_words`. | опционально |
-| `summarizer/` или `summarization/` | Папка с весами seq2seq суммаризатора (`config.json`, `pytorch_model.bin` / `model.safetensors`, токенизатор). Загружается через `AutoModelForSeq2SeqLM.from_pretrained(<path>)`. Также ищется на Google Drive в `$PROJECT_DRIVE_DIR/models/summarization` и `.../models/summarizer`. Если папки нет, используется HuggingFace Hub (`SUMMARIZATION_MODEL_NAME`, по умолчанию `IlyaGusev/rut5_base_sum_gazeta`). | опционально |
+| `summarizer/` или `summarization/` | Папка с весами seq2seq суммаризатора (`config.json`, `pytorch_model.bin` / `model.safetensors`, токенизатор). Загружается через `AutoModelForSeq2SeqLM.from_pretrained(<path>)`. Если папки нет, используется HuggingFace Hub (`SUMMARIZATION_MODEL_NAME`, по умолчанию `IlyaGusev/rut5_base_sum_gazeta`). | опционально |
 
 > ⚠ Большие `.pt`/`.pickle` файлы **не коммитятся** в git
 > (см. корневой `.gitignore`). Эта папка должна остаться placeholder.
 
-## Как подключить из Google Drive (после прогона notebook 11)
+## Как подключить из Hugging Face Hub
 
-Артефакты notebook 11 ожидаются здесь:
-`/content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/`
+Артефакты публикуются в репозитории
+[`ozonize/dialogsum-ru-intent-rubert`](https://huggingface.co/ozonize/dialogsum-ru-intent-rubert).
+При первом запуске webapp `load_artifacts()` сам скачает недостающие файлы
+через `huggingface_hub.hf_hub_download` в локальный кэш
+(`~/.cache/huggingface` или `$HF_HOME`). Копировать вручную не обязательно.
 
-Если в окружении смонтирован Google Drive (Colab/VM), копировать файлы
-**не обязательно** — `load_artifacts()` сам подхватит их из Drive. Папку
-можно переопределить через `DRIVE_MULTITASK_MODELS_DIR` или
-`PROJECT_DRIVE_DIR`. Если Drive не смонтирован — скопируйте файлы в
-`dialogsum_intent_webapp/models/`:
+Если требуется заранее положить файлы локально (например, при работе без
+сети), используйте `huggingface-cli`:
 
 ```bash
-cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/single_task_intent_model.pt dialogsum_intent_webapp/models/
-cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/intent_label_encoder.joblib dialogsum_intent_webapp/models/
-cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/multitask_config.json dialogsum_intent_webapp/models/
+huggingface-cli download ozonize/dialogsum-ru-intent-rubert \
+    single_task_intent_model.pt intent_label_encoder.joblib multitask_config.json \
+    --local-dir dialogsum_intent_webapp/models
 ```
 
 Опционально (только если будете расширять до multi-task):
 
 ```bash
-cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/multitask_intent_topic_model.pt dialogsum_intent_webapp/models/
-cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/topic_label_encoder.joblib dialogsum_intent_webapp/models/
-cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/coarse_topic_label_encoder.joblib dialogsum_intent_webapp/models/
+huggingface-cli download ozonize/dialogsum-ru-intent-rubert \
+    multitask_intent_topic_model.pt topic_label_encoder.joblib coarse_topic_label_encoder.joblib \
+    --local-dir dialogsum_intent_webapp/models
 ```
 
-После копирования перезапустите приложение (`python app.py`). В логе появится
+После этого `python app.py` поднимет интерфейс в режиме
+`single_task_rubert_model`. В логе появится
 `Обнаружен single-task RuBERT state_dict: single_task_intent_model.pt
 (lazy-load при первом predict_intent)`, а в UI верхняя плашка покажет
 `Intent mode: single_task_rubert_model`.
@@ -86,20 +85,19 @@ cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent
 | Переменная | Значение по умолчанию | Назначение |
 |---|---|---|
 | `ENABLE_TORCH_INTENT_MODEL` | `true` | если `false`, single-task RuBERT runtime принудительно отключается |
-| `INTENT_MODEL_FILE` | `single_task_intent_model.pt` | имя файла state_dict в `models/` |
+| `INTENT_MODEL_FILE` | `single_task_intent_model.pt` | имя файла state_dict в `models/` и в HF-репозитории |
 | `INTENT_ENCODER_NAME` | (из `multitask_config.json`, иначе `DeepPavlov/rubert-base-cased-conversational`) | имя HuggingFace модели-энкодера |
-| `PROJECT_DRIVE_DIR` | `/content/drive/MyDrive/russian-dialogue-intent-thesis` | корень проекта на Google Drive |
-| `DRIVE_MULTITASK_MODELS_DIR` | `$PROJECT_DRIVE_DIR/models/multitask_intent_topic` | папка intent-артефактов на Drive |
+| `HF_INTENT_REPO_ID` | `ozonize/dialogsum-ru-intent-rubert` | HF-репозиторий с обученными артефактами |
+| `HF_TOKEN` / `HUGGINGFACE_HUB_TOKEN` | — | токен Hugging Face, нужен только для приватных репозиториев |
+| `ENABLE_HF_DOWNLOAD` | `true` | если `false`, загрузка с HF Hub отключена (только локальные файлы) |
 | `ENABLE_SUMMARIZATION` | `true` | если `false`, summarize() возвращает статус «отключено» |
-| `SUMMARIZATION_MODEL_NAME` | `IlyaGusev/rut5_base_sum_gazeta` | HF id, fallback если нет локальной / Drive папки |
+| `SUMMARIZATION_MODEL_NAME` | `IlyaGusev/rut5_base_sum_gazeta` | HF id, fallback если нет локальной папки summarizer |
 | `SUMMARIZATION_LOCAL_DIR` | — | явный путь к локальной папке summarizer (с `config.json`) |
-| `DRIVE_SUMMARIZATION_DIR` | — | явный путь к папке summarizer на Drive |
 | `SUMMARIZATION_MAX_INPUT_TOKENS` / `SUMMARIZATION_MAX_NEW_TOKENS` / `SUMMARIZATION_NUM_BEAMS` | `1024 / 96 / 4` | параметры генерации |
 
 ## Архитектура runtime (для совместимости state_dict)
 
-`SingleTaskIntentModelRuntime` повторяет `SingleTaskIntentModel` из cell 5
-notebook 11:
+`SingleTaskIntentModelRuntime` повторяет архитектуру `SingleTaskIntentModel`:
 
 ```
 encoder       = AutoModel.from_pretrained(model_name)
@@ -115,11 +113,6 @@ forward(pooled) = intent_head(proj(mean_pool(encoder.last_hidden_state)))
 отфильтровываются. Если ключи `encoder./proj./intent_head.` вообще отсутствуют,
 runtime не падает: webapp молча переходит в rule-based fallback и сообщает об
 этом в `artifact_status`.
-
-State_dict должен быть сохранён из версии notebook 11 после коммита `fbb8252`
-(или более актуальной). Если структура архитектуры в будущей версии notebook
-поменяется, fallback продолжит работать, но Intent mode будет показывать
-`rule_based_fallback`.
 
 ## Ограничения fallback
 

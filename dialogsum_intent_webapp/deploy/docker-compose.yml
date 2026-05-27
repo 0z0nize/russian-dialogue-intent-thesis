@@ -23,6 +23,10 @@ services:
       # Дополнительные опциональные переменные:
       # SENTENCE_MODEL: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
       MODELS_DIR: /app/models
+      # Hugging Face Hub: репозиторий с обученными артефактами интентов.
+      HF_INTENT_REPO_ID: ${HF_INTENT_REPO_ID:-ozonize/dialogsum-ru-intent-rubert}
+      # Опциональный токен HF, нужен только для приватных репозиториев.
+      HF_TOKEN: ${HF_TOKEN:-}
     volumes:
       # Монтируем артефакты моделей хоста (если есть) в контейнер.
       - ../models:/app/models

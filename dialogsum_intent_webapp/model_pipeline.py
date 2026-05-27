@@ -4,20 +4,20 @@ Pipeline для демо-вебинтерфейса по ВКР:
 
 Содержит:
 - ленивую загрузку Whisper (faster-whisper) для русского языка;
-- intent-классификацию: предпочтительно single-task RuBERT runtime из ноутбука 11
-  (best модель: macro-F1 0.7770, accuracy 0.9126 на test), при отсутствии
-  артефактов — старая joblib-модель или rule-based fallback;
+- intent-классификацию: предпочтительно single-task RuBERT runtime
+  (best модель: macro-F1 0.7770, accuracy 0.9126 на test) из артефактов
+  проекта; при отсутствии — старая joblib-модель или rule-based fallback;
 - тематический классификатор (sentence-transformers + центроиды кластеров
   или keyword fallback);
 - реальную суммаризацию через HuggingFace Transformers
   (по умолчанию IlyaGusev/rut5_base_sum_gazeta);
 - общую функцию analyze(text) -> dict (JSON-совместимый).
 
-Артефакты ищутся сначала в локальной папке `models/`, затем — в подключённом
-Google Drive по пути
-`/content/drive/MyDrive/russian-dialogue-intent-thesis/models/...`.
-Все модели опциональны — если артефакты не лежат ни локально, ни на Drive,
-включаются rule-based ветки, чтобы webapp запустился даже на пустом VPS.
+Артефакты ищутся сначала в локальной папке `models/`, а если файлов нет —
+скачиваются с Hugging Face Hub (по умолчанию из репозитория
+`ozonize/dialogsum-ru-intent-rubert`). Все модели опциональны: если
+артефакты не найдены и Hub недоступен, включаются rule-based ветки, чтобы
+webapp запустился даже на пустом VPS.
 """
 
 from __future__ import annotations
@@ -44,10 +44,10 @@ _ARTIFACTS: Dict[str, Any] = {
     "topic_centroids": None,
     "topic_metadata": None,
     "sentence_encoder": None,
-    # single-task RuBERT runtime (notebook 11)
+    # single-task RuBERT runtime
     "torch_intent_runtime": None,        # SingleTaskIntentModelRuntime instance after lazy build
     "torch_intent_state_path": None,     # путь к .pt, обнаруженный при load_artifacts
-    "torch_intent_state_source": None,   # "local" | "google_drive"
+    "torch_intent_state_source": None,   # "local" | "huggingface_hub"
     "torch_intent_config": None,         # dict из multitask_config.json (если есть)
     "torch_intent_config_source": None,
     "torch_intent_label_encoder_source": None,
@@ -57,44 +57,74 @@ _ARTIFACTS: Dict[str, Any] = {
     "summarizer_model": None,
     "summarizer_tokenizer": None,
     "summarizer_attempted": False,
-    "summarizer_source": None,           # "local" | "google_drive" | "huggingface_hub"
+    "summarizer_source": None,           # "local" | "huggingface_hub"
     "summarizer_path_or_name": None,
     "summarizer_load_error": None,
     "summarizer_device": None,
     "loaded": False,
     "models_dir": None,
-    "drive_multitask_dir": None,
-    "drive_summarization_dir": None,
-    "drive_available": False,
+    "hf_repo_id": None,
+    "hf_available": False,
+    "hf_download_error": None,
 }
 
 _WHISPER_MODEL = None  # ленивая загрузка
 
 
 # ---------------------------------------------------------------------------
-# Google Drive discovery
+# Hugging Face Hub
 # ---------------------------------------------------------------------------
 
-PROJECT_DRIVE_DIR_DEFAULT = "/content/drive/MyDrive/russian-dialogue-intent-thesis"
+HF_INTENT_REPO_ID_DEFAULT = "ozonize/dialogsum-ru-intent-rubert"
+
+# Имена артефактов, которые мы умеем тянуть с Hub при необходимости.
+_HF_INTENT_FILES = (
+    "single_task_intent_model.pt",
+    "intent_label_encoder.joblib",
+    "multitask_config.json",
+    "multitask_intent_topic_model.pt",
+    "topic_label_encoder.joblib",
+    "coarse_topic_label_encoder.joblib",
+)
 
 
-def _project_drive_dir() -> Path:
-    return Path(os.environ.get("PROJECT_DRIVE_DIR", PROJECT_DRIVE_DIR_DEFAULT))
+def _hf_repo_id() -> str:
+    return os.environ.get("HF_INTENT_REPO_ID", HF_INTENT_REPO_ID_DEFAULT)
 
 
-def _drive_multitask_dir() -> Path:
-    explicit = os.environ.get("DRIVE_MULTITASK_MODELS_DIR")
-    if explicit:
-        return Path(explicit)
-    return _project_drive_dir() / "models" / "multitask_intent_topic"
+def _hf_token() -> Optional[str]:
+    """Опциональный токен (для приватных репозиториев)."""
+    return os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
 
 
-def _drive_summarization_dirs() -> List[Path]:
-    explicit = os.environ.get("DRIVE_SUMMARIZATION_DIR")
-    if explicit:
-        return [Path(explicit)]
-    base = _project_drive_dir() / "models"
-    return [base / "summarization", base / "summarizer"]
+def _hf_download(filename: str) -> Optional[Path]:
+    """Скачивает один файл из Hub-репозитория интентов в локальный кэш.
+
+    Возвращает Path к локальному файлу или None при ошибке. Все ошибки
+    подавляются и пишутся в логи — приложение должно работать и без сети.
+    """
+    if not _env_flag("ENABLE_HF_DOWNLOAD", True):
+        return None
+    try:
+        from huggingface_hub import hf_hub_download  # noqa: WPS433
+    except Exception as exc:
+        _ARTIFACTS["hf_download_error"] = f"huggingface_hub не установлен: {exc}"
+        logger.warning("HF Hub: %s", _ARTIFACTS["hf_download_error"])
+        return None
+
+    repo_id = _hf_repo_id()
+    try:
+        local = hf_hub_download(
+            repo_id=repo_id,
+            filename=filename,
+            token=_hf_token(),
+        )
+        logger.info("HF Hub: скачан %s из %s -> %s", filename, repo_id, local)
+        return Path(local)
+    except Exception as exc:
+        _ARTIFACTS["hf_download_error"] = f"{filename}: {exc}"
+        logger.warning("HF Hub: не удалось скачать %s из %s: %s", filename, repo_id, exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -215,40 +245,23 @@ def _env_flag(name: str, default: bool = True) -> bool:
     return val.strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
-def _safe_dir_exists(path: Path) -> bool:
+def _resolve_artifact_local(filename: str, models_path: Path) -> Optional[Path]:
+    """Возвращает локальный путь к артефакту, если он существует."""
     try:
-        return path.exists() and path.is_dir()
+        candidate = models_path / filename
+        if candidate.exists() and candidate.is_file():
+            return candidate
     except OSError:
-        return False
-
-
-def _resolve_artifact(filename: str, search_dirs: List[Path]) -> Optional[Path]:
-    """Возвращает первый существующий путь к артефакту в порядке search_dirs."""
-    for d in search_dirs:
-        try:
-            candidate = d / filename
-            if candidate.exists() and candidate.is_file():
-                return candidate
-        except OSError:
-            continue
+        return None
     return None
 
 
-def _source_label(path: Path, local_dir: Path, drive_dir: Path) -> str:
-    try:
-        resolved = path.resolve()
-    except OSError:
-        resolved = path
-    try:
-        if resolved.is_relative_to(local_dir.resolve()):
-            return "local"
-    except (AttributeError, OSError, ValueError):
-        # is_relative_to is Python 3.9+; fall back to string comparison
-        if str(resolved).startswith(str(local_dir)):
-            return "local"
-    if str(resolved).startswith(str(drive_dir)):
-        return "google_drive"
-    return "local" if str(resolved).startswith(str(local_dir)) else "external"
+def _resolve_artifact(filename: str, models_path: Path) -> Optional[Path]:
+    """Локально, иначе — пробуем скачать с HF Hub."""
+    local = _resolve_artifact_local(filename, models_path)
+    if local is not None:
+        return local
+    return _hf_download(filename)
 
 
 def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
@@ -259,8 +272,8 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
 
     Порядок поиска для intent-артефактов:
       1. локальная папка `models_dir`;
-      2. Google Drive: `$DRIVE_MULTITASK_MODELS_DIR`
-         (по умолчанию `$PROJECT_DRIVE_DIR/models/multitask_intent_topic`).
+      2. Hugging Face Hub (`$HF_INTENT_REPO_ID`, по умолчанию
+         `ozonize/dialogsum-ru-intent-rubert`).
 
     Сам тяжёлый PyTorch-encoder (`single_task_intent_model.pt`) здесь не
     инициализируется: на этом этапе мы только обнаруживаем файлы и читаем
@@ -271,36 +284,34 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
     """
     models_path = Path(models_dir)
     _ARTIFACTS["models_dir"] = str(models_path.resolve()) if models_path.exists() else str(models_path)
-
-    drive_multitask = _drive_multitask_dir()
-    _ARTIFACTS["drive_multitask_dir"] = str(drive_multitask)
-    _ARTIFACTS["drive_summarization_dir"] = [str(p) for p in _drive_summarization_dirs()]
-    _ARTIFACTS["drive_available"] = _safe_dir_exists(_project_drive_dir())
-
-    search_dirs: List[Path] = [models_path]
-    if _safe_dir_exists(drive_multitask):
-        search_dirs.append(drive_multitask)
+    _ARTIFACTS["hf_repo_id"] = _hf_repo_id()
+    _ARTIFACTS["hf_available"] = False
+    _ARTIFACTS["hf_download_error"] = None
 
     local_resolved = models_path.resolve() if models_path.exists() else models_path
 
-    # intent label encoder (используется и старым joblib-pipeline, и новым torch runtime)
-    intent_label_path = _resolve_artifact("intent_label_encoder.joblib", search_dirs)
+    def _label_source(local: bool) -> str:
+        return "local" if local else "huggingface_hub"
+
+    # intent label encoder
+    local_path = _resolve_artifact_local("intent_label_encoder.joblib", models_path)
+    intent_label_path = local_path or _hf_download("intent_label_encoder.joblib")
     if intent_label_path is not None:
         try:
             import joblib  # noqa: WPS433
             _ARTIFACTS["intent_label_encoder"] = joblib.load(intent_label_path)
-            _ARTIFACTS["torch_intent_label_encoder_source"] = _source_label(
-                intent_label_path, local_resolved, drive_multitask,
-            )
+            _ARTIFACTS["torch_intent_label_encoder_source"] = _label_source(local_path is not None)
             logger.info(
                 "Загружен intent_label_encoder.joblib (%s: %s)",
                 _ARTIFACTS["torch_intent_label_encoder_source"], intent_label_path,
             )
+            if local_path is None:
+                _ARTIFACTS["hf_available"] = True
         except Exception as exc:  # pragma: no cover
             logger.warning("Не удалось загрузить intent_label_encoder.joblib: %s", exc)
 
     # старый sklearn-style intent_model (оставлен для обратной совместимости)
-    intent_model_path = _resolve_artifact("intent_model.joblib", search_dirs)
+    intent_model_path = _resolve_artifact_local("intent_model.joblib", models_path)
     if intent_model_path is not None:
         try:
             import joblib  # noqa: WPS433
@@ -309,39 +320,41 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
         except Exception as exc:  # pragma: no cover - зависит от артефактов
             logger.warning("Не удалось загрузить intent_model.joblib: %s", exc)
 
-    # multitask config из ноутбука 11
-    config_path = _resolve_artifact("multitask_config.json", search_dirs)
+    # multitask config
+    local_path = _resolve_artifact_local("multitask_config.json", models_path)
+    config_path = local_path or _hf_download("multitask_config.json")
     if config_path is not None:
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 _ARTIFACTS["torch_intent_config"] = json.load(f)
-            _ARTIFACTS["torch_intent_config_source"] = _source_label(
-                config_path, local_resolved, drive_multitask,
-            )
+            _ARTIFACTS["torch_intent_config_source"] = _label_source(local_path is not None)
             logger.info(
                 "Загружен multitask_config.json (%s): model_name=%s, num_intents=%s",
                 _ARTIFACTS["torch_intent_config_source"],
                 _ARTIFACTS["torch_intent_config"].get("model_name"),
                 _ARTIFACTS["torch_intent_config"].get("num_intents"),
             )
+            if local_path is None:
+                _ARTIFACTS["hf_available"] = True
         except Exception as exc:  # pragma: no cover
             logger.warning("Не удалось прочитать multitask_config.json: %s", exc)
 
-    # single-task RuBERT state_dict (notebook 11, best модель)
+    # single-task RuBERT state_dict
     intent_state_file = os.environ.get("INTENT_MODEL_FILE", "single_task_intent_model.pt")
-    intent_state_path = _resolve_artifact(intent_state_file, search_dirs)
+    local_path = _resolve_artifact_local(intent_state_file, models_path)
+    intent_state_path = local_path or _hf_download(intent_state_file)
     if intent_state_path is not None:
         _ARTIFACTS["torch_intent_state_path"] = str(intent_state_path.resolve())
-        _ARTIFACTS["torch_intent_state_source"] = _source_label(
-            intent_state_path, local_resolved, drive_multitask,
-        )
+        _ARTIFACTS["torch_intent_state_source"] = _label_source(local_path is not None)
         logger.info(
             "Обнаружен single-task RuBERT state_dict (%s): %s (lazy-load при первом predict_intent)",
             _ARTIFACTS["torch_intent_state_source"], intent_state_path,
         )
+        if local_path is None:
+            _ARTIFACTS["hf_available"] = True
 
-    # topic centroids
-    centroids_path = _resolve_artifact("topic_centroids.npy", search_dirs)
+    # topic centroids (только локально; не входят в HF репо)
+    centroids_path = _resolve_artifact_local("topic_centroids.npy", models_path)
     if centroids_path is not None:
         try:
             _ARTIFACTS["topic_centroids"] = np.load(centroids_path)
@@ -350,7 +363,7 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
             logger.warning("Не удалось загрузить topic_centroids.npy: %s", exc)
 
     # topic metadata
-    meta_path = _resolve_artifact("topic_metadata.parquet", search_dirs)
+    meta_path = _resolve_artifact_local("topic_metadata.parquet", models_path)
     if meta_path is not None:
         try:
             import pandas as pd  # noqa: WPS433
@@ -397,9 +410,9 @@ def get_artifact_status() -> Dict[str, Any]:
 
     return {
         "models_dir": _ARTIFACTS.get("models_dir"),
-        "drive_available": _ARTIFACTS.get("drive_available", False),
-        "drive_multitask_dir": _ARTIFACTS.get("drive_multitask_dir"),
-        "drive_summarization_dirs": _ARTIFACTS.get("drive_summarization_dir"),
+        "hf_repo_id": _ARTIFACTS.get("hf_repo_id"),
+        "hf_available": _ARTIFACTS.get("hf_available", False),
+        "hf_download_error": _ARTIFACTS.get("hf_download_error"),
         "torch_intent_enabled": enabled,
         "torch_intent_state_found": has_torch_state,
         "torch_intent_state_path": _ARTIFACTS.get("torch_intent_state_path"),
@@ -429,7 +442,7 @@ def _ensure_loaded() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Single-task RuBERT runtime (notebook 11)
+# Single-task RuBERT runtime
 # ---------------------------------------------------------------------------
 
 _DEFAULT_TORCH_MODEL_NAME = "DeepPavlov/rubert-base-cased-conversational"
@@ -438,7 +451,7 @@ _DEFAULT_TORCH_DROPOUT = 0.1
 
 
 class SingleTaskIntentModelRuntime:
-    """Runtime-обёртка `SingleTaskIntentModel` из ноутбука 11.
+    """Runtime-обёртка `SingleTaskIntentModel`.
 
     Архитектура повторяет `SingleTaskIntentModel`:
         encoder = AutoModel.from_pretrained(base_model_name)
@@ -446,9 +459,8 @@ class SingleTaskIntentModelRuntime:
         intent_head = Linear(h, num_intents)
     Pooling — mean по attention mask.
 
-    Имя поля проекции в state_dict из ноутбука — `proj.*` (см. cell 5
-    notebook 11). На случай чужих чекпойнтов поддерживается
-    `load_state_dict(strict=False)` с предупреждением.
+    Имя поля проекции в state_dict — `proj.*`. На случай чужих чекпойнтов
+    поддерживается `load_state_dict(strict=False)` с предупреждением.
     """
 
     def __init__(
@@ -483,8 +495,6 @@ class SingleTaskIntentModelRuntime:
         )
         self.intent_head = nn.Linear(hidden, self.num_intents)
 
-        # Собираем nn.Module-обёртку, чтобы load_state_dict видел все веса
-        # под теми же именами, что сохраняет notebook 11.
         class _Wrap(nn.Module):
             def __init__(wself):
                 super().__init__()
@@ -500,13 +510,8 @@ class SingleTaskIntentModelRuntime:
         if isinstance(state, dict) and "state_dict" in state and not any(
             k.startswith(("encoder.", "proj.", "intent_head.")) for k in state
         ):
-            # на случай, если кто-то завернул в {"state_dict": ...}
             state = state["state_dict"]
 
-        # Совместимость: ноутбук сохраняет ключи через model.state_dict() без
-        # дополнительных префиксов, поэтому имена должны совпадать. Но если
-        # state_dict содержит головы из multi-task модели (topic_head, ...) —
-        # отфильтруем их, чтобы strict=False не молчал на shape mismatch.
         keep_prefixes = ("encoder.", "proj.", "intent_head.")
         filtered = {k: v for k, v in state.items() if k.startswith(keep_prefixes)}
         if not filtered:
@@ -519,7 +524,6 @@ class SingleTaskIntentModelRuntime:
             missing, unexpected = self._module.load_state_dict(filtered, strict=True)
             warn = None
         except Exception as exc_strict:
-            # fallback: strict=False
             result = self._module.load_state_dict(filtered, strict=False)
             missing = list(getattr(result, "missing_keys", []) or [])
             unexpected = list(getattr(result, "unexpected_keys", []) or [])
@@ -570,11 +574,7 @@ class SingleTaskIntentModelRuntime:
 
 
 def _build_torch_intent_runtime() -> Optional[SingleTaskIntentModelRuntime]:
-    """Ленивая инициализация single-task RuBERT runtime.
-
-    Возвращает None и записывает причину в `torch_intent_load_error`, если
-    что-то пошло не так. Никогда не пробрасывает исключения.
-    """
+    """Ленивая инициализация single-task RuBERT runtime."""
     if _ARTIFACTS.get("torch_intent_runtime") is not None:
         return _ARTIFACTS["torch_intent_runtime"]
 
@@ -667,7 +667,6 @@ def _get_whisper():
 
     model_size = os.environ.get("WHISPER_MODEL_SIZE", "medium")
 
-    # Определяем устройство
     device = "cpu"
     compute_type = "int8"
     try:
@@ -742,8 +741,8 @@ def _intent_rule_based(text: str) -> Dict[str, Any]:
 def predict_intent(text: str) -> Dict[str, Any]:
     """Предсказывает intent.
 
-    Порядок: single-task RuBERT runtime (notebook 11) → старый
-    sklearn joblib intent_model → rule-based fallback.
+    Порядок: single-task RuBERT runtime → старый sklearn joblib intent_model
+    → rule-based fallback.
     """
     _ensure_loaded()
     if not text or not text.strip():
@@ -751,7 +750,7 @@ def predict_intent(text: str) -> Dict[str, Any]:
 
     encoder = _ARTIFACTS.get("intent_label_encoder")
 
-    # 1) Single-task RuBERT runtime (best модель из ноутбука 11)
+    # 1) Single-task RuBERT runtime
     if (
         _env_flag("ENABLE_TORCH_INTENT_MODEL", True)
         and _ARTIFACTS.get("torch_intent_state_path")
@@ -854,7 +853,6 @@ def _topic_meta_row(cluster_id: int) -> Optional[Dict[str, Any]]:
     if meta is None:
         return None
     try:
-        # Ожидаем колонки: cluster_id, name, description, top_words (list/str)
         if "cluster_id" in meta.columns:
             row = meta[meta["cluster_id"] == cluster_id]
         else:
@@ -877,11 +875,7 @@ def _topic_meta_row(cluster_id: int) -> Optional[Dict[str, Any]]:
 
 
 def predict_topic(text: str) -> Dict[str, Any]:
-    """Предсказывает тематический кластер.
-
-    Если есть centroids + sentence-transformers — берём ближайший кластер
-    по косинусной близости. Иначе — keyword fallback из ВКР-тем.
-    """
+    """Предсказывает тематический кластер."""
     _ensure_loaded()
     if not text or not text.strip():
         return {
@@ -900,13 +894,12 @@ def predict_topic(text: str) -> Dict[str, Any]:
             try:
                 emb = encoder.encode([text], normalize_embeddings=True)[0]
                 cents = centroids
-                # Нормализуем центроиды на всякий случай
                 norms = np.linalg.norm(cents, axis=1, keepdims=True)
                 norms[norms == 0] = 1.0
                 cents_n = cents / norms
                 sims = cents_n @ emb
                 idx = int(np.argmax(sims))
-                confidence = float((sims[idx] + 1.0) / 2.0)  # [-1,1] -> [0,1]
+                confidence = float((sims[idx] + 1.0) / 2.0)
                 meta = _topic_meta_row(idx) or {
                     "cluster_id": idx,
                     "name": f"cluster_{idx}",
@@ -941,25 +934,13 @@ def _summarizer_local_dirs() -> List[Path]:
 
 
 def _resolve_summarizer_source() -> Dict[str, Any]:
-    """Определяет, откуда грузить summarizer: локально / Drive / HF Hub.
-
-    Возвращает dict с ключами `path_or_name`, `source`.
-    """
-    # 1) локальная папка
+    """Определяет, откуда грузить summarizer: локально или с HF Hub."""
     for d in _summarizer_local_dirs():
         try:
             if d.exists() and (d / "config.json").exists():
                 return {"path_or_name": str(d.resolve()), "source": "local"}
         except OSError:
             continue
-    # 2) Google Drive
-    for d in _drive_summarization_dirs():
-        try:
-            if d.exists() and (d / "config.json").exists():
-                return {"path_or_name": str(d), "source": "google_drive"}
-        except OSError:
-            continue
-    # 3) HuggingFace Hub
     model_name = os.environ.get("SUMMARIZATION_MODEL_NAME", _DEFAULT_SUMMARIZATION_MODEL)
     return {"path_or_name": model_name, "source": "huggingface_hub"}
 
@@ -1023,14 +1004,7 @@ def _build_summarizer() -> bool:
 
 
 def summarize(text: str):
-    """Возвращает кортеж (summary, status).
-
-    Использует HuggingFace seq2seq модель (по умолчанию
-    IlyaGusev/rut5_base_sum_gazeta). При первом вызове модель грузится
-    лениво. Если суммаризация отключена через ENABLE_SUMMARIZATION=false
-    или модель не удалось загрузить, возвращает понятный статус, а не
-    демо-заглушку.
-    """
+    """Возвращает кортеж (summary, status)."""
     if not text or not text.strip():
         return None, "Пустой ввод — суммаризация не выполнена"
 
@@ -1150,7 +1124,6 @@ def analyze(text: str) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    # Простой smoke-test
     import json
     load_artifacts(os.environ.get("MODELS_DIR", "models"))
     sample = "Здравствуйте, я хочу забронировать билет на концерт в Москве"

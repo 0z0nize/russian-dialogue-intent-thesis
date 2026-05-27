@@ -9,7 +9,6 @@ Gradio Blocks UI для демо ВКР по русскоязычному рас
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any, Dict, Tuple
@@ -32,33 +31,36 @@ def _status_banner_md() -> str:
     )
     if mode == "single_task_rubert_model":
         intent_text = (
-            "Single-task RuBERT (notebook 11). Test metrics: "
-            "accuracy 0.9126, macro-F1 0.7770."
+            "Single-task RuBERT (обученные артефакты проекта). "
+            "Test metrics: accuracy 0.9126, macro-F1 0.7770."
         )
     elif mode == "sklearn_intent_model":
         intent_text = "sklearn-pipeline intent_model.joblib (legacy)."
     else:
         intent_text = (
             "Артефакты не подключены — работает rule-based fallback. "
-            "См. README → «Подключение лучшей модели из notebook 11»."
+            "См. README → «Подключение артефактов из Hugging Face Hub»."
         )
 
     intent_src = status.get("torch_intent_state_source") or "missing"
     src_label = {
         "local": "локальная папка models/",
-        "google_drive": "Google Drive",
+        "huggingface_hub": "Hugging Face Hub",
         "missing": "артефакт не найден",
     }.get(intent_src, intent_src)
-    drive_note = (
+    hf_repo = status.get("hf_repo_id") or "—"
+    src_note = (
         f" · <b>Источник intent:</b> <code>{intent_src}</code> ({src_label})"
+        f" · <b>HF репозиторий:</b> <code>{hf_repo}</code>"
     )
-    if status.get("drive_available"):
-        drive_note += " · Google Drive подключён"
-    else:
-        drive_note += " · Google Drive не подключён"
 
     err = status.get("torch_intent_load_error")
     err_md = f"<br><span class='small-note'>⚠ Загрузка torch модели: {err}</span>" if err else ""
+    hf_err = status.get("hf_download_error")
+    hf_err_md = (
+        f"<br><span class='small-note'>⚠ Hugging Face Hub: {hf_err}</span>"
+        if hf_err else ""
+    )
 
     summary_mode = status.get("summary_mode", "pending_lazy_load")
     summary_icon = {
@@ -82,7 +84,7 @@ def _status_banner_md() -> str:
 
     return (
         f"<div class='small-note'>{icon} <b>Intent mode:</b> "
-        f"<code>{mode}</code> — {intent_text}{drive_note}{err_md}</div>"
+        f"<code>{mode}</code> — {intent_text}{src_note}{err_md}{hf_err_md}</div>"
         + summary_line
     )
 
@@ -120,6 +122,11 @@ def _result_tuple(result: Dict[str, Any]) -> Tuple:
     )
 
 
+def _empty_result_tuple() -> Tuple:
+    """Кортеж для очистки полей результата."""
+    return ("", 0.0, "", -1, "", "", "", "", None)
+
+
 def analyze_text(text: str):
     try:
         result = mp.analyze(text or "")
@@ -144,8 +151,7 @@ def analyze_text(text: str):
 
 def analyze_audio(audio_path: str):
     if not audio_path:
-        empty = mp.analyze("")
-        return ("",) + _result_tuple(empty)
+        return ("",) + _empty_result_tuple()
     try:
         text = mp.transcribe_audio(audio_path)
     except Exception as exc:
@@ -160,7 +166,11 @@ def analyze_audio(audio_path: str):
 # ---------------------------------------------------------------------------
 
 INTRO_MD = """
-# Семантический анализ русскоязычных диалогов
+# Семантический анализ русскоязычных диалогов для задачи распознавания намерений с улучшением на базе предобученных моделей
+
+**Шкаровский Владислав Семёнович**, НИУ ИТМО, магистратура, образовательная программа «Аналитика данных».
+
+[📖 README на GitHub](https://github.com/0z0nize/russian-dialogue-intent-thesis/blob/main/README.md)
 
 Демо к магистерской ВКР по корпусу **DialogSum-RU**: на вход — текст или
 голосовая запись на русском, на выход — намерение (intent), тематический
@@ -206,11 +216,13 @@ def build_demo() -> gr.Blocks:
                             placeholder="Например: Здравствуйте, я хочу забронировать билет на концерт в Москве.",
                             lines=6,
                         )
-                        text_btn = gr.Button("Анализировать", variant="primary")
+                        with gr.Row():
+                            text_btn = gr.Button("Анализировать", variant="primary")
+                            text_clear_btn = gr.Button("Очистить", variant="secondary")
                         gr.Markdown(
                             "<span class='small-note'>Поле <b>Intent mode</b> ниже показывает, "
                             "какой модуль обработал реплику: <code>single_task_rubert_model</code> "
-                            "(notebook 11) или <code>rule_based_fallback</code>.</span>"
+                            "(обученные артефакты проекта) или <code>rule_based_fallback</code>.</span>"
                         )
                     with gr.Column(scale=4):
                         t_intent = gr.Textbox(label="Intent (намерение)")
@@ -224,20 +236,28 @@ def build_demo() -> gr.Blocks:
                         t_summary = gr.Textbox(label="Summary / статус", lines=2)
                         t_json = gr.JSON(label="Полный JSON-ответ", elem_id="json-out")
 
+                text_outputs = [
+                    t_intent,
+                    t_intent_conf,
+                    t_intent_mode,
+                    t_topic_id,
+                    t_topic_name,
+                    t_topic_desc,
+                    t_topic_words,
+                    t_summary,
+                    t_json,
+                ]
+
                 text_btn.click(
                     analyze_text,
                     inputs=[text_input],
-                    outputs=[
-                        t_intent,
-                        t_intent_conf,
-                        t_intent_mode,
-                        t_topic_id,
-                        t_topic_name,
-                        t_topic_desc,
-                        t_topic_words,
-                        t_summary,
-                        t_json,
-                    ],
+                    outputs=text_outputs,
+                )
+
+                text_clear_btn.click(
+                    lambda: ("",) + _empty_result_tuple(),
+                    inputs=None,
+                    outputs=[text_input] + text_outputs,
                 )
 
             # ---------------- Tab 2: Голос ----------------
@@ -249,7 +269,9 @@ def build_demo() -> gr.Blocks:
                             type="filepath",
                             label="Запишите или загрузите аудио (русский)",
                         )
-                        audio_btn = gr.Button("Распознать и анализировать", variant="primary")
+                        with gr.Row():
+                            audio_btn = gr.Button("Распознать и анализировать", variant="primary")
+                            audio_clear_btn = gr.Button("Очистить голосовой ввод", variant="secondary")
                         gr.Markdown(
                             "<span class='small-note'>STT: faster-whisper. По умолчанию модель "
                             f"<code>{os.environ.get('WHISPER_MODEL_SIZE', 'medium')}</code>. "
@@ -268,21 +290,29 @@ def build_demo() -> gr.Blocks:
                         a_summary = gr.Textbox(label="Summary / статус", lines=2)
                         a_json = gr.JSON(label="Полный JSON-ответ", elem_id="json-out")
 
+                audio_outputs = [
+                    a_text,
+                    a_intent,
+                    a_intent_conf,
+                    a_intent_mode,
+                    a_topic_id,
+                    a_topic_name,
+                    a_topic_desc,
+                    a_topic_words,
+                    a_summary,
+                    a_json,
+                ]
+
                 audio_btn.click(
                     analyze_audio,
                     inputs=[audio_input],
-                    outputs=[
-                        a_text,
-                        a_intent,
-                        a_intent_conf,
-                        a_intent_mode,
-                        a_topic_id,
-                        a_topic_name,
-                        a_topic_desc,
-                        a_topic_words,
-                        a_summary,
-                        a_json,
-                    ],
+                    outputs=audio_outputs,
+                )
+
+                audio_clear_btn.click(
+                    lambda: (None, "") + _empty_result_tuple(),
+                    inputs=None,
+                    outputs=[audio_input] + audio_outputs,
                 )
 
         gr.Markdown(
