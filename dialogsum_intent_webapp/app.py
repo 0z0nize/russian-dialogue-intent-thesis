@@ -20,8 +20,34 @@ import model_pipeline as mp
 
 logger = logging.getLogger(__name__)
 
-# Прогрузим артефакты сразу при импорте (whisper всё равно ленив)
+# Прогрузим артефакты сразу при импорте (whisper и RuBERT всё равно ленивы)
 mp.load_artifacts(os.environ.get("MODELS_DIR", "models"))
+
+
+def _status_banner_md() -> str:
+    status = mp.get_artifact_status()
+    mode = status.get("intent_mode_planned", "rule_based_fallback")
+    icon = "✅" if mode == "single_task_rubert_model" else (
+        "🟡" if mode == "sklearn_intent_model" else "⚠️"
+    )
+    if mode == "single_task_rubert_model":
+        text = (
+            "Single-task RuBERT (notebook 11). Test metrics: "
+            "accuracy 0.9126, macro-F1 0.7770."
+        )
+    elif mode == "sklearn_intent_model":
+        text = "sklearn-pipeline intent_model.joblib (legacy)."
+    else:
+        text = (
+            "Артефакты не подключены — работает rule-based fallback. "
+            "См. README → «Подключение лучшей модели из notebook 11»."
+        )
+    err = status.get("torch_intent_load_error")
+    err_md = f"<br><span class='small-note'>⚠ Загрузка torch модели: {err}</span>" if err else ""
+    return (
+        f"<div class='small-note'>{icon} <b>Intent mode:</b> "
+        f"<code>{mode}</code> — {text}{err_md}</div>"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +65,7 @@ def _result_tuple(result: Dict[str, Any]) -> Tuple:
     return (
         result.get("intent_label") or "",
         result.get("intent_confidence") if result.get("intent_confidence") is not None else 0.0,
+        result.get("intent_mode") or "",
         result.get("topic_cluster_id") if result.get("topic_cluster_id") is not None else -1,
         result.get("topic_cluster_name") or "",
         result.get("topic_cluster_description") or "",
@@ -122,6 +149,7 @@ def build_demo() -> gr.Blocks:
         blocks_kwargs["theme"] = gr.themes.Soft()
     with gr.Blocks(**blocks_kwargs) as demo:
         gr.Markdown(INTRO_MD)
+        gr.Markdown(_status_banner_md())
 
         with gr.Tabs():
             # ---------------- Tab 1: Текст ----------------
@@ -135,11 +163,14 @@ def build_demo() -> gr.Blocks:
                         )
                         text_btn = gr.Button("Анализировать", variant="primary")
                         gr.Markdown(
-                            "<span class='small-note'>Если артефакты моделей отсутствуют — сработает rule-based fallback.</span>"
+                            "<span class='small-note'>Поле <b>Intent mode</b> ниже показывает, "
+                            "какой модуль обработал реплику: <code>single_task_rubert_model</code> "
+                            "(notebook 11) или <code>rule_based_fallback</code>.</span>"
                         )
                     with gr.Column(scale=4):
                         t_intent = gr.Textbox(label="Intent (намерение)")
                         t_intent_conf = gr.Number(label="Intent confidence", precision=3)
+                        t_intent_mode = gr.Textbox(label="Intent mode (источник предсказания)")
                         with gr.Row():
                             t_topic_id = gr.Number(label="Topic cluster id", precision=0)
                             t_topic_name = gr.Textbox(label="Topic name")
@@ -154,6 +185,7 @@ def build_demo() -> gr.Blocks:
                     outputs=[
                         t_intent,
                         t_intent_conf,
+                        t_intent_mode,
                         t_topic_id,
                         t_topic_name,
                         t_topic_desc,
@@ -182,6 +214,7 @@ def build_demo() -> gr.Blocks:
                         a_text = gr.Textbox(label="Распознанный текст", lines=4)
                         a_intent = gr.Textbox(label="Intent (намерение)")
                         a_intent_conf = gr.Number(label="Intent confidence", precision=3)
+                        a_intent_mode = gr.Textbox(label="Intent mode (источник предсказания)")
                         with gr.Row():
                             a_topic_id = gr.Number(label="Topic cluster id", precision=0)
                             a_topic_name = gr.Textbox(label="Topic name")
@@ -197,6 +230,7 @@ def build_demo() -> gr.Blocks:
                         a_text,
                         a_intent,
                         a_intent_conf,
+                        a_intent_mode,
                         a_topic_id,
                         a_topic_name,
                         a_topic_desc,

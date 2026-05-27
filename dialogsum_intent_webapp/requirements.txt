@@ -7,3 +7,4 @@ numpy>=1.24.0
 pandas>=2.0.0
 pyarrow>=12.0.0
 torch>=2.0.0
+transformers>=4.40.0

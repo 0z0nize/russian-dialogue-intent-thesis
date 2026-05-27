@@ -4,7 +4,9 @@ Pipeline для демо-вебинтерфейса по ВКР:
 
 Содержит:
 - ленивую загрузку Whisper (faster-whisper) для русского языка;
-- intent-классификацию (joblib-модель из ВКР или rule-based fallback);
+- intent-классификацию: предпочтительно single-task RuBERT runtime из ноутбука 11
+  (best модель: macro-F1 0.7770, accuracy 0.9126 на test), при отсутствии
+  артефактов — старая joblib-модель или rule-based fallback;
 - тематический классификатор (sentence-transformers + центроиды кластеров
   или keyword fallback);
 - заглушку суммаризации;
@@ -16,6 +18,7 @@ Pipeline для демо-вебинтерфейса по ВКР:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -37,6 +40,12 @@ _ARTIFACTS: Dict[str, Any] = {
     "topic_centroids": None,
     "topic_metadata": None,
     "sentence_encoder": None,
+    # single-task RuBERT runtime (notebook 11)
+    "torch_intent_runtime": None,        # SingleTaskIntentModelRuntime instance after lazy build
+    "torch_intent_state_path": None,     # путь к .pt, обнаруженный при load_artifacts
+    "torch_intent_config": None,         # dict из multitask_config.json (если есть)
+    "torch_intent_load_error": None,     # последнее предупреждение при загрузке
+    "torch_intent_attempted": False,     # уже пытались lazy-build
     "loaded": False,
     "models_dir": None,
 }
@@ -155,25 +164,31 @@ _TOPIC_FALLBACK: List[Dict[str, Any]] = [
 # Загрузка артефактов
 # ---------------------------------------------------------------------------
 
+def _env_flag(name: str, default: bool = True) -> bool:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return val.strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
 def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
     """Загружает опциональные артефакты моделей.
 
     Никогда не падает — при отсутствии файлов соответствующие ключи остаются
     None, и downstream-функции переходят в fallback-режим.
+
+    Сам тяжёлый PyTorch-encoder (`single_task_intent_model.pt`) здесь не
+    инициализируется: на этом этапе мы только обнаруживаем файлы и читаем
+    `intent_label_encoder.joblib` + `multitask_config.json`. Реальная сборка
+    модели (`AutoModel.from_pretrained` + `load_state_dict`) выполняется
+    лениво при первом обращении к `predict_intent`, чтобы старт UI оставался
+    быстрым.
     """
     models_path = Path(models_dir)
     _ARTIFACTS["models_dir"] = str(models_path.resolve())
 
-    # intent model + label encoder
-    intent_model_path = models_path / "intent_model.joblib"
+    # intent label encoder (используется и старым joblib-pipeline, и новым torch runtime)
     intent_label_path = models_path / "intent_label_encoder.joblib"
-    if intent_model_path.exists():
-        try:
-            import joblib  # noqa: WPS433
-            _ARTIFACTS["intent_model"] = joblib.load(intent_model_path)
-            logger.info("Загружен intent_model.joblib")
-        except Exception as exc:  # pragma: no cover - зависит от артефактов
-            logger.warning("Не удалось загрузить intent_model.joblib: %s", exc)
     if intent_label_path.exists():
         try:
             import joblib  # noqa: WPS433
@@ -181,6 +196,40 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
             logger.info("Загружен intent_label_encoder.joblib")
         except Exception as exc:  # pragma: no cover
             logger.warning("Не удалось загрузить intent_label_encoder.joblib: %s", exc)
+
+    # старый sklearn-style intent_model (оставлен для обратной совместимости)
+    intent_model_path = models_path / "intent_model.joblib"
+    if intent_model_path.exists():
+        try:
+            import joblib  # noqa: WPS433
+            _ARTIFACTS["intent_model"] = joblib.load(intent_model_path)
+            logger.info("Загружен intent_model.joblib")
+        except Exception as exc:  # pragma: no cover - зависит от артефактов
+            logger.warning("Не удалось загрузить intent_model.joblib: %s", exc)
+
+    # multitask config из ноутбука 11
+    config_path = models_path / "multitask_config.json"
+    if config_path.exists():
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                _ARTIFACTS["torch_intent_config"] = json.load(f)
+            logger.info(
+                "Загружен multitask_config.json: model_name=%s, num_intents=%s",
+                _ARTIFACTS["torch_intent_config"].get("model_name"),
+                _ARTIFACTS["torch_intent_config"].get("num_intents"),
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Не удалось прочитать multitask_config.json: %s", exc)
+
+    # single-task RuBERT state_dict (notebook 11, best модель)
+    intent_state_file = os.environ.get("INTENT_MODEL_FILE", "single_task_intent_model.pt")
+    intent_state_path = models_path / intent_state_file
+    if intent_state_path.exists():
+        _ARTIFACTS["torch_intent_state_path"] = str(intent_state_path.resolve())
+        logger.info(
+            "Обнаружен single-task RuBERT state_dict: %s (lazy-load при первом predict_intent)",
+            intent_state_path.name,
+        )
 
     # topic centroids
     centroids_path = models_path / "topic_centroids.npy"
@@ -205,9 +254,244 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
     return _ARTIFACTS
 
 
+def get_artifact_status() -> Dict[str, Any]:
+    """Возвращает статус артефактов для отображения в UI / диагностики."""
+    _ensure_loaded()
+    has_torch_state = _ARTIFACTS.get("torch_intent_state_path") is not None
+    has_encoder = _ARTIFACTS.get("intent_label_encoder") is not None
+    has_config = _ARTIFACTS.get("torch_intent_config") is not None
+    runtime_loaded = _ARTIFACTS.get("torch_intent_runtime") is not None
+    enabled = _env_flag("ENABLE_TORCH_INTENT_MODEL", True)
+
+    if enabled and has_torch_state and has_encoder:
+        intent_mode = "single_task_rubert_model"
+    elif _ARTIFACTS.get("intent_model") is not None:
+        intent_mode = "sklearn_intent_model"
+    else:
+        intent_mode = "rule_based_fallback"
+
+    return {
+        "models_dir": _ARTIFACTS.get("models_dir"),
+        "torch_intent_enabled": enabled,
+        "torch_intent_state_found": has_torch_state,
+        "torch_intent_state_path": _ARTIFACTS.get("torch_intent_state_path"),
+        "intent_label_encoder_found": has_encoder,
+        "multitask_config_found": has_config,
+        "torch_intent_runtime_loaded": runtime_loaded,
+        "torch_intent_load_error": _ARTIFACTS.get("torch_intent_load_error"),
+        "intent_mode_planned": intent_mode,
+        "topic_centroids_found": _ARTIFACTS.get("topic_centroids") is not None,
+        "topic_metadata_found": _ARTIFACTS.get("topic_metadata") is not None,
+    }
+
+
 def _ensure_loaded() -> None:
     if not _ARTIFACTS["loaded"]:
         load_artifacts(os.environ.get("MODELS_DIR", "models"))
+
+
+# ---------------------------------------------------------------------------
+# Single-task RuBERT runtime (notebook 11)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_TORCH_MODEL_NAME = "DeepPavlov/rubert-base-cased-conversational"
+_DEFAULT_TORCH_MAX_LEN = 128
+_DEFAULT_TORCH_DROPOUT = 0.1
+
+
+class SingleTaskIntentModelRuntime:
+    """Runtime-обёртка `SingleTaskIntentModel` из ноутбука 11.
+
+    Архитектура повторяет `SingleTaskIntentModel`:
+        encoder = AutoModel.from_pretrained(base_model_name)
+        shared/proj = Linear(h, h) -> GELU -> LayerNorm -> Dropout
+        intent_head = Linear(h, num_intents)
+    Pooling — mean по attention mask.
+
+    Имя поля проекции в state_dict из ноутбука — `proj.*` (см. cell 5
+    notebook 11). На случай чужих чекпойнтов поддерживается
+    `load_state_dict(strict=False)` с предупреждением.
+    """
+
+    def __init__(
+        self,
+        base_model_name: str,
+        num_intents: int,
+        dropout: float = _DEFAULT_TORCH_DROPOUT,
+        max_len: int = _DEFAULT_TORCH_MAX_LEN,
+        device: Optional[str] = None,
+    ):
+        import torch  # noqa: WPS433
+        from torch import nn  # noqa: WPS433
+        from transformers import AutoModel, AutoTokenizer  # noqa: WPS433
+
+        self._torch = torch
+        self.base_model_name = base_model_name
+        self.num_intents = int(num_intents)
+        self.max_len = int(max_len)
+
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = device
+
+        self.tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+        self.encoder = AutoModel.from_pretrained(base_model_name)
+        hidden = self.encoder.config.hidden_size
+        self.proj = nn.Sequential(
+            nn.Linear(hidden, hidden),
+            nn.GELU(),
+            nn.LayerNorm(hidden),
+            nn.Dropout(dropout),
+        )
+        self.intent_head = nn.Linear(hidden, self.num_intents)
+
+        # Собираем nn.Module-обёртку, чтобы load_state_dict видел все веса
+        # под теми же именами, что сохраняет notebook 11.
+        class _Wrap(nn.Module):
+            def __init__(wself):
+                super().__init__()
+                wself.encoder = self.encoder
+                wself.proj = self.proj
+                wself.intent_head = self.intent_head
+
+        self._module = _Wrap()
+
+    def load_state_dict_from_path(self, path: str) -> Dict[str, Any]:
+        torch = self._torch
+        state = torch.load(path, map_location="cpu")
+        if isinstance(state, dict) and "state_dict" in state and not any(
+            k.startswith(("encoder.", "proj.", "intent_head.")) for k in state
+        ):
+            # на случай, если кто-то завернул в {"state_dict": ...}
+            state = state["state_dict"]
+
+        # Совместимость: ноутбук сохраняет ключи через model.state_dict() без
+        # дополнительных префиксов, поэтому имена должны совпадать. Но если
+        # state_dict содержит головы из multi-task модели (topic_head, ...) —
+        # отфильтруем их, чтобы strict=False не молчал на shape mismatch.
+        keep_prefixes = ("encoder.", "proj.", "intent_head.")
+        filtered = {k: v for k, v in state.items() if k.startswith(keep_prefixes)}
+        if not filtered:
+            raise RuntimeError(
+                "В state_dict не найдены ключи encoder./proj./intent_head. "
+                "Файл несовместим с SingleTaskIntentModelRuntime."
+            )
+
+        try:
+            missing, unexpected = self._module.load_state_dict(filtered, strict=True)
+            warn = None
+        except Exception as exc_strict:
+            # fallback: strict=False
+            result = self._module.load_state_dict(filtered, strict=False)
+            missing = list(getattr(result, "missing_keys", []) or [])
+            unexpected = list(getattr(result, "unexpected_keys", []) or [])
+            warn = f"strict=True не прошёл ({exc_strict}); загрузка через strict=False"
+            logger.warning("SingleTask state_dict: %s", warn)
+
+        self._module.to(self.device)
+        self._module.eval()
+        return {
+            "missing_keys": list(missing) if missing else [],
+            "unexpected_keys": list(unexpected) if unexpected else [],
+            "warning": warn,
+            "device": self.device,
+        }
+
+    def predict(self, text: str, top_k: int = 5) -> Dict[str, Any]:
+        torch = self._torch
+        enc = self.tokenizer(
+            text,
+            truncation=True,
+            padding=True,
+            max_length=self.max_len,
+            return_tensors="pt",
+        )
+        input_ids = enc["input_ids"].to(self.device)
+        attention_mask = enc["attention_mask"].to(self.device)
+
+        with torch.no_grad():
+            out = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+            mask = attention_mask.unsqueeze(-1).float()
+            summed = (out.last_hidden_state * mask).sum(dim=1)
+            counts = mask.sum(dim=1).clamp(min=1e-9)
+            pooled = summed / counts
+            proj = self.proj(pooled)
+            logits = self.intent_head(proj)
+            probs = torch.softmax(logits, dim=-1)[0].cpu().numpy()
+
+        idx = int(np.argmax(probs))
+        topk_idx = np.argsort(probs)[::-1][: max(1, int(top_k))]
+        return {
+            "argmax_index": idx,
+            "argmax_confidence": float(probs[idx]),
+            "probs": probs.astype(float).tolist(),
+            "topk": [
+                {"index": int(j), "confidence": float(probs[j])} for j in topk_idx
+            ],
+        }
+
+
+def _build_torch_intent_runtime() -> Optional[SingleTaskIntentModelRuntime]:
+    """Ленивая инициализация single-task RuBERT runtime.
+
+    Возвращает None и записывает причину в `torch_intent_load_error`, если
+    что-то пошло не так. Никогда не пробрасывает исключения.
+    """
+    if _ARTIFACTS.get("torch_intent_runtime") is not None:
+        return _ARTIFACTS["torch_intent_runtime"]
+
+    if not _env_flag("ENABLE_TORCH_INTENT_MODEL", True):
+        _ARTIFACTS["torch_intent_load_error"] = "ENABLE_TORCH_INTENT_MODEL=false"
+        return None
+
+    state_path = _ARTIFACTS.get("torch_intent_state_path")
+    label_encoder = _ARTIFACTS.get("intent_label_encoder")
+    if not state_path:
+        _ARTIFACTS["torch_intent_load_error"] = "state_dict не найден"
+        return None
+    if label_encoder is None or not hasattr(label_encoder, "classes_"):
+        _ARTIFACTS["torch_intent_load_error"] = "intent_label_encoder.joblib не найден"
+        return None
+
+    config = _ARTIFACTS.get("torch_intent_config") or {}
+    base_model_name = (
+        os.environ.get("INTENT_ENCODER_NAME")
+        or config.get("model_name")
+        or _DEFAULT_TORCH_MODEL_NAME
+    )
+    max_len = int(config.get("max_len") or _DEFAULT_TORCH_MAX_LEN)
+    num_intents_cfg = config.get("num_intents")
+    num_intents = int(num_intents_cfg) if num_intents_cfg else len(label_encoder.classes_)
+    if num_intents != len(label_encoder.classes_):
+        logger.warning(
+            "num_intents из config (%s) != len(label_encoder.classes_) (%s); используем encoder",
+            num_intents_cfg, len(label_encoder.classes_),
+        )
+        num_intents = len(label_encoder.classes_)
+
+    try:
+        runtime = SingleTaskIntentModelRuntime(
+            base_model_name=base_model_name,
+            num_intents=num_intents,
+            dropout=_DEFAULT_TORCH_DROPOUT,
+            max_len=max_len,
+        )
+        info = runtime.load_state_dict_from_path(state_path)
+    except Exception as exc:
+        _ARTIFACTS["torch_intent_load_error"] = f"build/load failed: {exc}"
+        logger.warning("Single-task RuBERT runtime не загружен: %s", exc)
+        return None
+
+    _ARTIFACTS["torch_intent_runtime"] = runtime
+    if info.get("warning"):
+        _ARTIFACTS["torch_intent_load_error"] = info["warning"]
+    else:
+        _ARTIFACTS["torch_intent_load_error"] = None
+    logger.info(
+        "Single-task RuBERT runtime готов: base=%s, num_intents=%d, device=%s",
+        base_model_name, num_intents, info.get("device"),
+    )
+    return runtime
 
 
 # ---------------------------------------------------------------------------
@@ -318,17 +602,58 @@ def _intent_rule_based(text: str) -> Dict[str, Any]:
 
 
 def predict_intent(text: str) -> Dict[str, Any]:
-    """Предсказывает intent. Использует joblib-модель из ВКР, если она есть."""
+    """Предсказывает intent.
+
+    Порядок: single-task RuBERT runtime (notebook 11) → старый
+    sklearn joblib intent_model → rule-based fallback.
+    """
     _ensure_loaded()
     if not text or not text.strip():
         return {"label": "other", "confidence": 0.0, "mode": "empty_input"}
 
-    model = _ARTIFACTS.get("intent_model")
     encoder = _ARTIFACTS.get("intent_label_encoder")
 
+    # 1) Single-task RuBERT runtime (best модель из ноутбука 11)
+    if (
+        _env_flag("ENABLE_TORCH_INTENT_MODEL", True)
+        and _ARTIFACTS.get("torch_intent_state_path")
+        and encoder is not None
+        and hasattr(encoder, "classes_")
+    ):
+        if not _ARTIFACTS["torch_intent_attempted"]:
+            _ARTIFACTS["torch_intent_attempted"] = True
+            _build_torch_intent_runtime()
+
+        runtime = _ARTIFACTS.get("torch_intent_runtime")
+        if runtime is not None:
+            try:
+                pred = runtime.predict(text, top_k=5)
+                idx = int(pred["argmax_index"])
+                classes = list(encoder.classes_)
+                label = str(classes[idx]) if 0 <= idx < len(classes) else INTENT_CLASSES[idx % len(INTENT_CLASSES)]
+                topk = [
+                    {
+                        "label": str(classes[int(item["index"])])
+                        if 0 <= int(item["index"]) < len(classes)
+                        else f"class_{item['index']}",
+                        "confidence": float(item["confidence"]),
+                    }
+                    for item in pred.get("topk", [])
+                ]
+                return {
+                    "label": label,
+                    "confidence": float(pred["argmax_confidence"]),
+                    "mode": "single_task_rubert_model",
+                    "topk": topk,
+                }
+            except Exception as exc:
+                logger.warning("Torch single-task runtime упал, fallback. %s", exc)
+                _ARTIFACTS["torch_intent_load_error"] = f"predict failed: {exc}"
+
+    # 2) Старая sklearn-модель (обратная совместимость)
+    model = _ARTIFACTS.get("intent_model")
     if model is not None:
         try:
-            # Пытаемся как pipeline (vectorizer внутри)
             if hasattr(model, "predict_proba"):
                 proba = model.predict_proba([text])[0]
                 idx = int(np.argmax(proba))
@@ -345,7 +670,7 @@ def predict_intent(text: str) -> Dict[str, Any]:
             return {
                 "label": label,
                 "confidence": confidence,
-                "mode": "model",
+                "mode": "sklearn_intent_model",
             }
         except Exception as exc:
             logger.warning("Intent модель не сработала, fallback. %s", exc)
@@ -482,6 +807,7 @@ def analyze(text: str) -> Dict[str, Any]:
             "intent_label": None,
             "intent_confidence": None,
             "intent_mode": "empty_input",
+            "intent_topk": None,
             "topic_cluster_id": None,
             "topic_cluster_name": None,
             "topic_cluster_description": None,
@@ -490,6 +816,7 @@ def analyze(text: str) -> Dict[str, Any]:
             "topic_mode": "empty_input",
             "summary": None,
             "summary_status": "Пустой ввод — анализ не выполнен",
+            "artifact_status": get_artifact_status(),
         }
 
     try:
@@ -518,6 +845,7 @@ def analyze(text: str) -> Dict[str, Any]:
         "intent_label": intent.get("label"),
         "intent_confidence": intent.get("confidence"),
         "intent_mode": intent.get("mode"),
+        "intent_topk": intent.get("topk"),
         "topic_cluster_id": topic.get("cluster_id"),
         "topic_cluster_name": topic.get("name"),
         "topic_cluster_description": topic.get("description"),
@@ -526,6 +854,7 @@ def analyze(text: str) -> Dict[str, Any]:
         "topic_mode": topic.get("mode"),
         "summary": summary,
         "summary_status": status,
+        "artifact_status": get_artifact_status(),
     }
 
 

@@ -19,17 +19,27 @@
 audio ──► faster-whisper (lazy)
                 │
                 ▼
-            текст ──► intent (joblib model OR rule-based fallback)
-                  │
-                  └─► topic (sentence-transformers + centroids OR keyword fallback)
-                  │
-                  └─► summary (заглушка)
+            текст ──► intent
+                   │     ├── single-task RuBERT runtime (notebook 11, BEST) — по умолчанию
+                   │     ├── sklearn intent_model.joblib (legacy)
+                   │     └── rule-based fallback
+                   │
+                   ├─► topic (sentence-transformers + centroids OR keyword fallback)
+                   │
+                   └─► summary (заглушка)
 ```
 
 - UI: **Gradio Blocks** (две вкладки «Текст» / «Голос»), русский интерфейс.
+  Сверху на странице видна плашка с текущим `Intent mode`
+  (`single_task_rubert_model` / `sklearn_intent_model` / `rule_based_fallback`),
+  тот же режим дублируется в результатах под каждой репликой.
 - STT: **faster-whisper** (русский язык, ленивая загрузка модели).
-- Intent / topic: опциональные артефакты из ноутбуков ВКР; при отсутствии
-  включаются rule-based fallback'и.
+- Intent: лучшая модель — single-task RuBERT из ноутбука 11
+  (`DeepPavlov/rubert-base-cased-conversational`, accuracy 0.9126, macro-F1 0.7770).
+  При отсутствии артефактов включается rule-based fallback.
+- Topic: пока остаётся в режиме centroids/keyword fallback —
+  multi-task topic head из ноутбука 11 даёт topic accuracy ~0.21 (fine) и
+  ~0.51 (coarse), что хуже отдельной кластерной пайплайны.
 - Без платных внешних API.
 
 ## Структура проекта
@@ -95,18 +105,68 @@ docker compose up --build -d
 Папка `models/` хоста монтируется в контейнер, так что артефакты можно
 обновлять без пересборки образа.
 
-## Подключение реальных артефактов
+## Подключение лучшей модели из notebook 11
 
-Положите в `models/` следующие файлы (любое подмножество):
+Notebook `11_neural_multitask_intent_topic_dialogsum_ru.ipynb` сохраняет
+артефакты в Google Drive:
+`/content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/`
+
+Лучший по итогам последнего прогона режим — **single-task RuBERT**
+(`DeepPavlov/rubert-base-cased-conversational`):
+
+- Test accuracy **0.9126**
+- Test macro-F1 **0.7770**
+- Test macro-F1 без `other` **0.7914**
+- Сравнение: multi-task `lambda_topic=0.1 + coarse` даёт accuracy 0.9083 /
+  macro-F1 0.7580, topic acc 0.2130, coarse topic acc 0.5134.
+
+Чтобы подключить лучшую модель к webapp:
+
+```bash
+# из директории, где смонтирован /content/drive (например, в Colab/VM):
+cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/single_task_intent_model.pt dialogsum_intent_webapp/models/
+cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/intent_label_encoder.joblib dialogsum_intent_webapp/models/
+cp /content/drive/MyDrive/russian-dialogue-intent-thesis/models/multitask_intent_topic/multitask_config.json dialogsum_intent_webapp/models/
+```
+
+После этого `python app.py` поднимет интерфейс в режиме
+`single_task_rubert_model`. Сам HuggingFace-энкодер (~700 МБ) скачивается
+лениво при первом запросе, поэтому старт UI остаётся быстрым.
+
+> ⚠ Большие `.pt`/`.bin`/`.pickle` артефакты **не коммитятся** в git
+> (корневой `.gitignore`). Папка `models/` в репозитории остаётся
+> placeholder с `.gitkeep` и `README.md`.
+
+### Переменные окружения для intent-модели
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `ENABLE_TORCH_INTENT_MODEL` | `true` | если `false`, single-task RuBERT runtime отключён принудительно |
+| `INTENT_MODEL_FILE` | `single_task_intent_model.pt` | имя файла state_dict в `models/` |
+| `INTENT_ENCODER_NAME` | (из `multitask_config.json`, иначе `DeepPavlov/rubert-base-cased-conversational`) | имя HuggingFace модели-энкодера |
+| `MODELS_DIR` | `models` | путь к артефактам |
+
+### Дополнительные опциональные артефакты
 
 | Файл | Назначение |
 |------|------------|
-| `intent_model.joblib` | sklearn-совместимая модель / pipeline для intent. |
-| `intent_label_encoder.joblib` | `LabelEncoder` для 14 классов из ВКР. |
-| `topic_centroids.npy` | Матрица центроидов кластеров, shape `(n_clusters, dim)`. |
-| `topic_metadata.parquet` | Метаданные: `cluster_id`, `name`, `description`, `top_words`. |
+| `intent_model.joblib` | старый sklearn-совместимый pipeline для intent (legacy fallback). |
+| `topic_centroids.npy` | матрица центроидов кластеров, shape `(n_clusters, dim)`. |
+| `topic_metadata.parquet` | метаданные: `cluster_id`, `name`, `description`, `top_words`. |
+| `multitask_intent_topic_model.pt` | state_dict multi-task модели — пока **не используется** на runtime; зарезервировано как future extension. |
 
-Подробнее — см. `models/README.md`.
+Подробнее — см. [`models/README.md`](models/README.md).
+
+### Что показывает UI
+
+Плашка вверху страницы (и поле «Intent mode» в результатах) явно
+сигнализирует, в каком режиме сработал intent-классификатор:
+
+- `single_task_rubert_model` — загружены `single_task_intent_model.pt` +
+  `intent_label_encoder.joblib`, прогноз сделан RuBERT-моделью.
+- `sklearn_intent_model` — single-task артефактов нет, использован старый
+  `intent_model.joblib`.
+- `rule_based_fallback` — артефактов нет, сработали ключевые слова.
 
 ## Ограничения mock fallback
 
@@ -123,17 +183,29 @@ docker compose up --build -d
 ## API analyze()
 
 ```python
-from model_pipeline import analyze
+from model_pipeline import analyze, get_artifact_status
+
+get_artifact_status()
+# {
+#   "torch_intent_state_found": True / False,
+#   "intent_label_encoder_found": True / False,
+#   "multitask_config_found": True / False,
+#   "intent_mode_planned": "single_task_rubert_model" | "rule_based_fallback",
+#   ...
+# }
+
 analyze("Здравствуйте, я хочу забронировать билет")
 # {
 #   "input_text": ...,
 #   "intent_label": "purchase_or_booking_request",
-#   "intent_confidence": 0.6,
-#   "intent_mode": "rule_based_fallback",
+#   "intent_confidence": 0.93,
+#   "intent_mode": "single_task_rubert_model",  # или rule_based_fallback
+#   "intent_topk": [{"label": ..., "confidence": ...}, ...],
 #   "topic_cluster_id": 6,
 #   "topic_cluster_name": "путешествия",
 #   ...
 #   "summary": None,
 #   "summary_status": "Суммаризация не подключена в демо-версии",
+#   "artifact_status": {...},
 # }
 ```
