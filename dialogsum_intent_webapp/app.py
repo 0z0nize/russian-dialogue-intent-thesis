@@ -245,20 +245,31 @@ def _itmo_logo_img_tag() -> str:
         return '<span class="itmo-logo-fallback">ИТМО</span>'
 
 
-HEADER_HTML = f"""
-<div class="itmo-header">
-  <div class="itmo-logo">{_itmo_logo_img_tag()}</div>
-  <div class="itmo-title">
-    <h1>Семантический анализ русскоязычных диалогов для задачи распознавания намерений с улучшением на базе предобученных моделей</h1>
-    <div class="itmo-meta">
-      <b>Шкаровский Владислав Семёнович</b> · НИУ ИТМО, магистратура, образовательная программа «Аналитика данных».
-    </div>
-    <div class="itmo-meta">
-      <a href="https://github.com/0z0nize/russian-dialogue-intent-thesis/blob/main/README.md" target="_blank" rel="noopener">📖 README на GitHub</a>
-    </div>
-  </div>
-</div>
-"""
+def _build_header_html() -> str:
+    """Собирает шапку как простую статическую разметку без флексов
+    с абсолютным позиционированием. Картинка и текст идут блоками,
+    раскладка управляется CSS (десктоп — flex-row, мобильный — column)."""
+    return (
+        '<div class="itmo-header-v2">'
+        f'  <div class="itmo-header-v2__logo">{_itmo_logo_img_tag()}</div>'
+        '  <div class="itmo-header-v2__title">'
+        '    <h1 class="itmo-header-v2__h1">Семантический анализ '
+        'русскоязычных диалогов для задачи распознавания намерений '
+        'с улучшением на базе предобученных моделей</h1>'
+        '    <div class="itmo-header-v2__meta">'
+        '      <b>Шкаровский Владислав Семёнович</b> · НИУ ИТМО, '
+        'магистратура, образовательная программа «Аналитика данных».'
+        '    </div>'
+        '    <div class="itmo-header-v2__meta">'
+        '      <a href="https://github.com/0z0nize/russian-dialogue-intent-thesis/blob/main/README.md"'
+        ' target="_blank" rel="noopener">📖 README на GitHub</a>'
+        '    </div>'
+        '  </div>'
+        '</div>'
+    )
+
+
+HEADER_HTML = _build_header_html()
 
 INTRO_MD = """
 Демо к магистерской ВКР по корпусу **DialogSum-RU**: на вход — текст или
@@ -273,11 +284,11 @@ INTRO_MD = """
 # «Анализировать» / «Распознать», чтобы пользователь видел подсказку, но
 # она не загромождала верх страницы.
 TEST_THEMES_HTML = """
-<details class="itmo-hints" open>
-  <summary>💡 Темы для тестирования интерфейса (нажмите, чтобы свернуть)</summary>
-  <div class="itmo-hints-body">
+<div class="itmo-hints-v2">
+  <div class="itmo-hints-v2__title">💡 Темы для тестирования интерфейса</div>
+  <div class="itmo-hints-v2__body">
     <div>Попробуйте реплики на следующие темы:</div>
-    <ul class="itmo-themes">
+    <ul class="itmo-hints-v2__themes">
       <li>собеседование / работа</li>
       <li>путешествия / билеты</li>
       <li>покупка / заказ</li>
@@ -289,7 +300,7 @@ TEST_THEMES_HTML = """
       <li>музыкальные события</li>
       <li>развлечения</li>
     </ul>
-    <div class="itmo-hints-examples">
+    <div class="itmo-hints-v2__examples">
       <b>Готовые примеры:</b>
       <ul>
         <li>«Здравствуйте, я хочу забронировать билет на концерт в Москве.»</li>
@@ -298,9 +309,9 @@ TEST_THEMES_HTML = """
         <li>«Не могу найти книгу автора Достоевского, помогите подобрать издание.»</li>
         <li>«Нужно вызвать мастера — стиральная машина не работает.»</li>
       </ul>
-      <div style="margin-top: 8px;">
+      <div class="itmo-hints-v2__dialog-wrap">
         <b>Пример диалога (для режима «По репликам»):</b>
-        <pre class="itmo-dialog-example">#Person1#: Здравствуйте, я купил билет на поезд, но он не появился в приложении.
+        <pre class="itmo-hints-v2__dialog">#Person1#: Здравствуйте, я купил билет на поезд, но он не появился в приложении.
 #Person2#: Добрый день. Подскажите номер заказа.
 #Person1#: Номер заказа 45821. Отправьте билет ещё раз на почту, пожалуйста.
 #Person2#: Хорошо, сейчас отправлю билет повторно.
@@ -310,47 +321,173 @@ TEST_THEMES_HTML = """
       </div>
     </div>
   </div>
-</details>
+</div>
 """
 
 CSS = """
 .gradio-container {max-width: 1100px !important;}
 #json-out textarea, #json-out pre {font-size: 0.85rem;}
 .small-note {color: #6b6b6b; font-size: 0.85rem;}
-.itmo-header {display: flex; align-items: center; gap: 18px;
-              margin: 4px 0 8px 0; padding: 10px 14px;
-              background: #f4f7fb; border: 1px solid #d6e1ef; border-radius: 10px;}
-.itmo-header .itmo-logo {flex: 0 0 auto;
-                         display: flex; align-items: center; justify-content: center;}
-.itmo-header .itmo-logo-img {height: 64px; width: auto; display: block;}
-.itmo-header .itmo-logo-fallback {display: inline-block; padding: 10px 14px;
-                                  background: #0f1a2e; color: #ffffff;
-                                  border-radius: 8px; font-weight: 700;
-                                  letter-spacing: 2px;}
-.itmo-header,
-.itmo-header * {color: #1a1a1a;}
-.itmo-header .itmo-title h1 {margin: 0 0 6px 0; font-size: 1.25rem; line-height: 1.3; color: #1a1a1a;}
-.itmo-header .itmo-meta {font-size: 0.9rem; color: #1a1a1a;}
-.itmo-header .itmo-meta b {color: #1a1a1a;}
-.itmo-header .itmo-meta a {color: #0f4ea8;}
-.itmo-hints {background: #f4f7fb; border: 1px solid #d6e1ef; border-radius: 8px;
-             padding: 8px 12px; margin: 6px 0 4px 0; font-size: 0.9rem;
-             color: #1a1a1a;}
-.itmo-hints summary {cursor: pointer; font-weight: 600; color: #0f4ea8;}
-.itmo-hints .itmo-hints-body,
-.itmo-hints .itmo-hints-body * {color: #1a1a1a;}
-.itmo-hints .itmo-themes {columns: 2; -webkit-columns: 2; -moz-columns: 2;
-                          margin: 6px 0 6px 18px; padding: 0;}
-.itmo-hints .itmo-themes li {margin: 1px 0; color: #1a1a1a;}
-.itmo-hints-examples {margin-top: 6px; color: #1a1a1a;}
-.itmo-hints-examples b {color: #0f4ea8;}
-.itmo-hints-examples ul {margin: 4px 0 0 18px; padding: 0;}
-.itmo-hints-examples li {color: #1a1a1a;}
-.itmo-hints-examples pre.itmo-dialog-example {
-    background: #ffffff; border: 1px solid #d6e1ef; border-radius: 6px;
-    padding: 8px 10px; margin: 4px 0 0 0;
+
+/* ===== ITMO header v2 — стабильная разметка без абсолютного позиционирования ===== */
+.gradio-container .itmo-header-v2 {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 18px;
+    margin: 4px 0 8px 0;
+    padding: 12px 14px;
+    background: #f4f7fb;
+    border: 1px solid #d6e1ef;
+    border-radius: 10px;
+    box-sizing: border-box;
+    width: 100%;
+    overflow: visible;
+}
+.gradio-container .itmo-header-v2,
+.gradio-container .itmo-header-v2 * {color: #1a1a1a;}
+.gradio-container .itmo-header-v2__logo {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+}
+.gradio-container .itmo-header-v2 .itmo-logo-img {
+    display: block;
+    height: 64px;
+    width: auto;
+    max-width: 100%;
+    object-fit: contain;
+    margin: 0;
+}
+.gradio-container .itmo-header-v2 .itmo-logo-fallback {
+    display: inline-block;
+    padding: 10px 14px;
+    background: #0f1a2e;
+    color: #ffffff;
+    border-radius: 8px;
+    font-weight: 700;
+    letter-spacing: 2px;
+}
+.gradio-container .itmo-header-v2__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+.gradio-container .itmo-header-v2__h1 {
+    margin: 0 0 6px 0;
+    font-size: 1.25rem;
+    line-height: 1.3;
+    color: #1a1a1a;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+.gradio-container .itmo-header-v2__meta {
+    font-size: 0.9rem;
+    color: #1a1a1a;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+.gradio-container .itmo-header-v2__meta b {color: #1a1a1a;}
+.gradio-container .itmo-header-v2__meta a {color: #0f4ea8;}
+
+/* ===== ITMO hints v2 — статический блок, без <details> ===== */
+.gradio-container .itmo-hints-v2 {
+    background: #f4f7fb;
+    border: 1px solid #d6e1ef;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 6px 0 4px 0;
+    font-size: 0.9rem;
+    color: #1a1a1a;
+    box-sizing: border-box;
+    width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+.gradio-container .itmo-hints-v2,
+.gradio-container .itmo-hints-v2 * {color: #1a1a1a;}
+.gradio-container .itmo-hints-v2__title {
+    font-weight: 600;
+    color: #0f4ea8;
+    margin-bottom: 4px;
+}
+.gradio-container .itmo-hints-v2__themes {
+    columns: 2;
+    -webkit-columns: 2;
+    -moz-columns: 2;
+    margin: 6px 0 6px 18px;
+    padding: 0;
+}
+.gradio-container .itmo-hints-v2__themes li {margin: 1px 0; color: #1a1a1a;}
+.gradio-container .itmo-hints-v2__examples {margin-top: 6px; color: #1a1a1a;}
+.gradio-container .itmo-hints-v2__examples b {color: #0f4ea8;}
+.gradio-container .itmo-hints-v2__examples ul {margin: 4px 0 0 18px; padding: 0;}
+.gradio-container .itmo-hints-v2__examples li {color: #1a1a1a;}
+.gradio-container .itmo-hints-v2__dialog-wrap {margin-top: 8px;}
+.gradio-container .itmo-hints-v2__dialog {
+    background: #ffffff;
+    border: 1px solid #d6e1ef;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin: 4px 0 0 0;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.82rem; color: #1a1a1a; white-space: pre-wrap;
+    font-size: 0.82rem;
+    color: #1a1a1a;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+/* ===== Compact voice-hint block (used in tab «Голос») ===== */
+.gradio-container .itmo-hints-v2--compact {
+    padding: 8px 12px;
+}
+.gradio-container .itmo-hints-v2--compact .itmo-hints-v2__body {color: #1a1a1a;}
+
+/* ===== Мобильная версия (<=768px): column-стек, центр, без overflow ===== */
+@media (max-width: 768px) {
+    .gradio-container .itmo-header-v2 {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 10px;
+        padding: 10px 12px;
+    }
+    .gradio-container .itmo-header-v2__logo {
+        width: 100%;
+        justify-content: center;
+        margin: 0 auto;
+    }
+    .gradio-container .itmo-header-v2 .itmo-logo-img {
+        width: min(220px, 80vw);
+        max-height: 90px;
+        height: auto;
+        object-fit: contain;
+        margin: 0 auto;
+    }
+    .gradio-container .itmo-header-v2__title {
+        width: 100%;
+        text-align: center;
+    }
+    .gradio-container .itmo-header-v2__h1 {
+        font-size: 1.1rem;
+        line-height: 1.3;
+    }
+    .gradio-container .itmo-header-v2__meta {
+        font-size: 0.88rem;
+    }
+    .gradio-container .itmo-hints-v2__themes {
+        columns: 1;
+        -webkit-columns: 1;
+        -moz-columns: 1;
+        margin-left: 18px;
+    }
 }
 """
 
@@ -504,14 +641,14 @@ def build_demo() -> gr.Blocks:
                             "Микрофон в браузере обычно требует HTTPS — иначе используйте upload.</span>"
                         )
                         gr.HTML(
-                            "<details class='itmo-hints'>"
-                            "<summary>💡 Темы для тестирования</summary>"
-                            "<div class='itmo-hints-body'>"
+                            "<div class='itmo-hints-v2 itmo-hints-v2--compact'>"
+                            "<div class='itmo-hints-v2__title'>💡 Темы для тестирования</div>"
+                            "<div class='itmo-hints-v2__body'>"
                             "Произнесите фразу на одну из тем: "
                             "собеседование / работа, путешествия / билеты, покупка / заказ, "
                             "ремонт / обслуживание, жалоба / проблема, образование, "
                             "дом / бытовые вопросы, поиск книг, музыкальные события, развлечения."
-                            "</div></details>"
+                            "</div></div>"
                         )
                     with gr.Column(scale=4):
                         a_text = gr.Textbox(label="Распознанный текст", lines=4)
