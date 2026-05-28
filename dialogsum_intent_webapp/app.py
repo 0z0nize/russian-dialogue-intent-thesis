@@ -611,6 +611,72 @@ body.dark .gradio-container .itmo-hints-v2,
     outline-offset: 2px;
 }
 
+/* ===== Защита от «расползания» layout длинным контентом =====
+   На desktop и mobile одинаково: gr.Row / gr.Column / gr.Block должны
+   уметь сжиматься (min-width: 0) и не вылезать за границы родителя
+   (max-width: 100%). Без min-width:0 flex-элемент по умолчанию имеет
+   min-width: auto и расширяется до ширины своего самого длинного
+   неразрывного содержимого — например, длинной строки JSON-вывода или
+   списка top words без пробелов. Из-за этого Gradio после первого
+   анализа пересчитывает раскладку и часть Row/Column на телефоне
+   неожиданно перестраивается в две колонки/страница растягивается. */
+.gradio-container .gr-row,
+.gradio-container .gr-column,
+.gradio-container .gr-block,
+.gradio-container .gr-form,
+.gradio-container .gr-group,
+.gradio-container .gr-box,
+.gradio-container [class*="block-"],
+.gradio-container [class*="row"],
+.gradio-container [class*="column"] {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* Длинный неразрывный текст (JSON, top words, URLs) не должен расширять
+   родителя. textarea и input — авто-перенос; pre/code/JSON — горизонтальный
+   скролл, чтобы не ломать общую ширину layout. Dataframe — горизонтальный
+   скролл всей таблицы. */
+.gradio-container textarea,
+.gradio-container input[type="text"],
+.gradio-container .gr-textbox textarea,
+.gradio-container .gr-textbox input {
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    white-space: pre-wrap !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+.gradio-container pre,
+.gradio-container code,
+.gradio-container .gr-json,
+.gradio-container [class*="json"] pre,
+.gradio-container [class*="json"] code,
+.gradio-container #json-out,
+.gradio-container #json-out pre,
+.gradio-container #json-out code {
+    overflow-x: auto !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    white-space: pre-wrap !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+.gradio-container .gr-dataframe,
+.gradio-container [class*="dataframe"] {
+    overflow-x: auto !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+.gradio-container .gr-dataframe table,
+.gradio-container [class*="dataframe"] table {
+    max-width: 100% !important;
+}
+
 /* ===== Мобильный layout =====
    Базовая раскладка шапки уже вертикальная (column) и работает одинаково
    на desktop и mobile, поэтому здесь корректируем только мелкие детали
@@ -621,6 +687,63 @@ body.dark .gradio-container .itmo-hints-v2,
         -webkit-columns: 1;
         -moz-columns: 1;
         margin-left: 18px;
+    }
+}
+
+/* ===== Мобильный layout: принудительно одна колонка =====
+   Проблема: Gradio Row на узких экранах по умолчанию пытается удержать
+   children в строку (flex-direction: row). Когда контент пустой, дети
+   и так встают друг под другом из-за wrap, но как только в правую
+   колонку приходит длинный JSON/summary/top words, Gradio пересчитывает
+   layout — и часть Row на телефоне внезапно становится двухколоночной
+   («Topic id» + «Topic name» в одну строку, левая/правая половины
+   интерфейса в две колонки), страница растягивается за пределы viewport
+   и появляется горизонтальный скролл всей страницы.
+   Решение: на mobile (<= 900px) все Row / .form / row-обёртки переводим
+   в flex-direction: column и сбрасываем gr-Column flex-basis в 100%,
+   чтобы каждая ячейка всегда занимала всю ширину родителя. Также
+   принудительно даём width:100% / max-width:100% / min-width:0 — это
+   гарантирует, что длинный контент не «вытолкнет» соседа.
+   На desktop (> 900px) ничего не меняем — двухколоночная компоновка
+   (scale=3 vs scale=4) сохраняется. */
+@media (max-width: 900px) {
+    .gradio-container .gr-row,
+    .gradio-container [class*="row"]:not([class*="row-"]):not(.itmo-header-v2),
+    .gradio-container .form,
+    .gradio-container .gr-form {
+        flex-direction: column !important;
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+    }
+    .gradio-container .gr-column,
+    .gradio-container [class*="column"]:not(.itmo-header-v2):not(.itmo-header-v2__title) {
+        flex: 1 1 100% !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+    .gradio-container .gr-block,
+    .gradio-container .block {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+    /* Кнопки в Row внутри вкладки «Текст» («Анализировать как один
+       текст», «Анализировать по репликам», «Очистить») и кнопки-
+       примеры — пусть растягиваются на всю ширину, чтобы их было удобно
+       нажимать пальцем и они не теснили друг друга. */
+    .gradio-container .gr-button,
+    .gradio-container button {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    /* Не ломаем кнопки внутри самих компонентов Gradio (например, кнопки
+       внутри Audio: запись/стоп/удалить) — у них специфические классы. */
+    .gradio-container .gr-audio button,
+    .gradio-container [class*="audio"] button,
+    .gradio-container [class*="record"] button,
+    .gradio-container [class*="waveform"] button {
+        width: auto !important;
     }
 }
 """
