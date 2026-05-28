@@ -508,6 +508,49 @@ body.dark .gradio-container .itmo-hints-v2,
     --itmo-hints-accent: #8ab4ff;
 }
 
+/* ===== Подписи (labels) input/output ячеек =====
+   Цель: чтобы лейблы вроде «Intent (намерение)», «Intent confidence»,
+   «Topic cluster id», «Topic name», «Summary / статус», «Полный JSON-ответ»
+   и т. п. визуально НЕ смешивались с фиолетовыми action-кнопками
+   («Анализировать как один текст», «Очистить», «Распознать и анализировать»)
+   и вкладками («Текст», «Голос»).
+
+   Подход: задаём собственный нейтральный slate/blue-gray фон именно
+   у label-обёрток Gradio (`.block-label`, `.label-wrap`). Эти классы
+   Gradio навешивает на подписи компонентов Textbox/Number/JSON и НЕ
+   использует для `button` или табов (`[role="tab"]`, `.tab-nav button`),
+   поэтому action-кнопки и вкладки сохранят свой фиолетовый акцент. */
+.gradio-container .block-label,
+.gradio-container .label-wrap {
+    background: #e2e8f0 !important;        /* slate-200 */
+    color: #1f2937 !important;             /* slate-800 */
+    border: 1px solid #cbd5e1 !important;  /* slate-300 */
+    border-radius: 6px !important;
+    padding: 2px 8px !important;
+    font-weight: 500 !important;
+    box-shadow: none !important;
+}
+
+/* Тёмная тема: тот же приём, но с тёмным slate/blue-gray. */
+@media (prefers-color-scheme: dark) {
+    .gradio-container .block-label,
+    .gradio-container .label-wrap {
+        background: #334155 !important;        /* slate-700 */
+        color: #e5e7eb !important;             /* slate-200 */
+        border: 1px solid #475569 !important;  /* slate-600 */
+    }
+}
+.dark .gradio-container .block-label,
+.gradio-container.dark .block-label,
+[data-theme="dark"] .gradio-container .block-label,
+.dark .gradio-container .label-wrap,
+.gradio-container.dark .label-wrap,
+[data-theme="dark"] .gradio-container .label-wrap {
+    background: #334155 !important;
+    color: #e5e7eb !important;
+    border: 1px solid #475569 !important;
+}
+
 /* ===== Мобильный layout =====
    Базовая раскладка шапки уже вертикальная (column) и работает одинаково
    на desktop и mobile, поэтому здесь корректируем только мелкие детали
