@@ -251,7 +251,9 @@ def _build_header_html() -> str:
     раскладка управляется CSS (десктоп — flex-row, мобильный — column)."""
     return (
         '<div class="itmo-header-v2">'
-        f'  <div class="itmo-header-v2__logo">{_itmo_logo_img_tag()}</div>'
+        '  <div class="itmo-header-v2__logo-wrap itmo-header-v2__logo">'
+        f'  {_itmo_logo_img_tag()}'
+        '  </div>'
         '  <div class="itmo-header-v2__title">'
         '    <h1 class="itmo-header-v2__h1">Семантический анализ '
         'русскоязычных диалогов для задачи распознавания намерений '
@@ -329,8 +331,16 @@ CSS = """
 #json-out textarea, #json-out pre {font-size: 0.85rem;}
 .small-note {color: #6b6b6b; font-size: 0.85rem;}
 
-/* ===== ITMO header v2 — Вариант Б: шапка как часть страницы, без тяжёлой карточки ===== */
+/* ===== ITMO header v2 — Вариант Б: шапка как часть страницы, без тяжёлой карточки =====
+   Цвет текста — адаптивный. По умолчанию (светлая тема) используем тёмный цвет,
+   но через CSS-переменную, чтобы её можно было переопределить из тёмной темы
+   ниже без необходимости переопределять каждое правило.
+   ВНИМАНИЕ: не фиксируем чёрный через !important, иначе на тёмной странице
+   получится «чёрный на чёрном». */
 .gradio-container .itmo-header-v2 {
+    --itmo-header-fg: #1a1a1a;
+    --itmo-header-link: #0f4ea8;
+    --itmo-header-link-hover: #0a3a85;
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -344,9 +354,10 @@ CSS = """
     box-sizing: border-box;
     width: 100%;
     overflow: visible;
+    color: var(--itmo-header-fg);
 }
-.gradio-container .itmo-header-v2,
-.gradio-container .itmo-header-v2 * {color: #1a1a1a;}
+.gradio-container .itmo-header-v2 * {color: inherit;}
+.gradio-container .itmo-header-v2__logo-wrap,
 .gradio-container .itmo-header-v2__logo {
     flex: 0 0 auto;
     display: flex;
@@ -382,41 +393,72 @@ CSS = """
     margin: 0 0 4px 0;
     font-size: 1.2rem;
     line-height: 1.3;
-    color: #1a1a1a !important;
+    color: var(--itmo-header-fg);
     font-weight: 700;
     word-wrap: break-word;
     overflow-wrap: break-word;
 }
 .gradio-container .itmo-header-v2__meta {
     font-size: 0.9rem;
-    color: #1a1a1a !important;
+    color: var(--itmo-header-fg);
     word-wrap: break-word;
     overflow-wrap: break-word;
     margin-top: 2px;
 }
-.gradio-container .itmo-header-v2__meta b {color: #1a1a1a !important;}
-.gradio-container .itmo-header-v2__meta a {color: #0f4ea8 !important; text-decoration: underline;}
-.gradio-container .itmo-header-v2__meta a:hover {color: #0a3a85 !important;}
+.gradio-container .itmo-header-v2__meta b {color: var(--itmo-header-fg);}
+.gradio-container .itmo-header-v2__meta a {
+    color: var(--itmo-header-link);
+    text-decoration: underline;
+}
+.gradio-container .itmo-header-v2__meta a:hover {color: var(--itmo-header-link-hover);}
 
-/* ===== ITMO hints v2 — статический блок, без <details> ===== */
+/* ===== Адаптация под тёмную тему =====
+   Покрываем три источника тёмной темы:
+   1) Системные настройки пользователя (prefers-color-scheme: dark).
+   2) Gradio-классы .dark / .gradio-container.dark и т. п.
+   3) Любой родитель с классом .dark или data-theme="dark" (для будущих тем). */
+@media (prefers-color-scheme: dark) {
+    .gradio-container .itmo-header-v2 {
+        --itmo-header-fg: #f1f3f5;
+        --itmo-header-link: #8ab4ff;
+        --itmo-header-link-hover: #b9ccff;
+    }
+}
+.dark .gradio-container .itmo-header-v2,
+.gradio-container.dark .itmo-header-v2,
+.dark.gradio-container .itmo-header-v2,
+.darkmode .gradio-container .itmo-header-v2,
+body.dark .gradio-container .itmo-header-v2,
+[data-theme="dark"] .gradio-container .itmo-header-v2 {
+    --itmo-header-fg: #f1f3f5;
+    --itmo-header-link: #8ab4ff;
+    --itmo-header-link-hover: #b9ccff;
+}
+
+/* ===== ITMO hints v2 — статический блок, без <details> =====
+   У подсказок есть собственный светлый фон (#f4f7fb), поэтому тёмный текст
+   на нём остаётся читаемым в любой теме. Используем переменную, чтобы
+   сохранить контракт «фон светлый → текст тёмный», но не использовать
+   !important. */
 .gradio-container .itmo-hints-v2 {
+    --itmo-hints-fg: #1a1a1a;
+    --itmo-hints-accent: #0f4ea8;
     background: #f4f7fb;
     border: 1px solid #d6e1ef;
     border-radius: 8px;
     padding: 8px 12px;
     margin: 6px 0 4px 0;
     font-size: 0.9rem;
-    color: #1a1a1a;
+    color: var(--itmo-hints-fg);
     box-sizing: border-box;
     width: 100%;
     word-wrap: break-word;
     overflow-wrap: break-word;
 }
-.gradio-container .itmo-hints-v2,
-.gradio-container .itmo-hints-v2 * {color: #1a1a1a;}
+.gradio-container .itmo-hints-v2 * {color: inherit;}
 .gradio-container .itmo-hints-v2__title {
     font-weight: 600;
-    color: #0f4ea8;
+    color: var(--itmo-hints-accent);
     margin-bottom: 4px;
 }
 .gradio-container .itmo-hints-v2__themes {
@@ -426,11 +468,10 @@ CSS = """
     margin: 6px 0 6px 18px;
     padding: 0;
 }
-.gradio-container .itmo-hints-v2__themes li {margin: 1px 0; color: #1a1a1a;}
-.gradio-container .itmo-hints-v2__examples {margin-top: 6px; color: #1a1a1a;}
-.gradio-container .itmo-hints-v2__examples b {color: #0f4ea8;}
+.gradio-container .itmo-hints-v2__themes li {margin: 1px 0;}
+.gradio-container .itmo-hints-v2__examples {margin-top: 6px;}
+.gradio-container .itmo-hints-v2__examples b {color: var(--itmo-hints-accent);}
 .gradio-container .itmo-hints-v2__examples ul {margin: 4px 0 0 18px; padding: 0;}
-.gradio-container .itmo-hints-v2__examples li {color: #1a1a1a;}
 .gradio-container .itmo-hints-v2__dialog-wrap {margin-top: 8px;}
 .gradio-container .itmo-hints-v2__dialog {
     background: #ffffff;
@@ -440,7 +481,7 @@ CSS = """
     margin: 4px 0 0 0;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 0.82rem;
-    color: #1a1a1a;
+    color: var(--itmo-hints-fg);
     white-space: pre-wrap;
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -452,24 +493,60 @@ CSS = """
 .gradio-container .itmo-hints-v2--compact {
     padding: 8px 12px;
 }
-.gradio-container .itmo-hints-v2--compact .itmo-hints-v2__body {color: #1a1a1a;}
 
-/* ===== Мобильная версия (<=768px): строго вертикальный стек ===== */
-@media (max-width: 768px) {
+/* ===== Мобильный layout =====
+   Используем сразу два механизма, чтобы layout срабатывал и на телефонах,
+   и в узких контейнерах Gradio (контейнер может быть уже окна, например
+   из-за бокового меню):
+   1) @media (max-width: 1024px) — основной триггер по ширине экрана.
+   2) container query @container itmo-header (max-width: 720px) — если
+      браузер поддерживает container-type, шапка переключается в колонку,
+      когда сам контейнер шапки становится узким, независимо от viewport.
+   Для каждого правила используем !important точечно — только на свойствах,
+   управляющих раскладкой (flex-direction, align-items, text-align, order),
+   чтобы переопределить базовый row-layout, но не трогать цвет текста. */
+.gradio-container .itmo-header-v2 {
+    container-type: inline-size;
+    container-name: itmo-header;
+}
+@container itmo-header (max-width: 720px) {
     .gradio-container .itmo-header-v2 {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
+        flex-direction: column !important;
+        align-items: center !important;
+        text-align: center;
+        gap: 8px;
+    }
+    .gradio-container .itmo-header-v2__logo-wrap,
+    .gradio-container .itmo-header-v2__logo {
+        order: 0 !important;
+        width: 100% !important;
+        justify-content: center !important;
+    }
+    .gradio-container .itmo-header-v2__title {
+        order: 1 !important;
+        width: 100% !important;
+        text-align: center;
+        padding: 0 4px;
+    }
+    .gradio-container .itmo-header-v2 .itmo-logo-img {
+        width: min(220px, 80vw);
+        max-height: 90px;
+        height: auto;
+    }
+}
+@media (max-width: 1024px) {
+    .gradio-container .itmo-header-v2 {
+        flex-direction: column !important;
+        align-items: center !important;
         text-align: center;
         gap: 8px;
         padding: 4px 0 8px 0;
-        background: transparent;
-        border: none;
-        box-shadow: none;
     }
+    .gradio-container .itmo-header-v2__logo-wrap,
     .gradio-container .itmo-header-v2__logo {
-        width: 100%;
-        justify-content: center;
+        order: 0 !important;
+        width: 100% !important;
+        justify-content: center !important;
         margin: 0 auto;
     }
     .gradio-container .itmo-header-v2 .itmo-logo-img {
@@ -480,20 +557,19 @@ CSS = """
         margin: 0 auto;
     }
     .gradio-container .itmo-header-v2__title {
-        width: 100%;
+        order: 1 !important;
+        width: 100% !important;
         text-align: center;
         padding: 0 4px;
     }
     .gradio-container .itmo-header-v2__h1 {
         font-size: 16px;
         line-height: 1.35;
-        color: #1a1a1a !important;
         margin: 0 0 6px 0;
     }
     .gradio-container .itmo-header-v2__meta {
         font-size: 14px;
         line-height: 1.4;
-        color: #1a1a1a !important;
         margin-top: 4px;
     }
     .gradio-container .itmo-hints-v2__themes {
