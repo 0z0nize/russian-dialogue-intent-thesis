@@ -509,46 +509,70 @@ body.dark .gradio-container .itmo-hints-v2,
 }
 
 /* ===== Подписи (labels) input/output ячеек =====
-   Цель: чтобы лейблы вроде «Intent (намерение)», «Intent confidence»,
-   «Topic cluster id», «Topic name», «Summary / статус», «Полный JSON-ответ»
-   и т. п. визуально НЕ смешивались с фиолетовыми action-кнопками
-   («Анализировать как один текст», «Очистить», «Распознать и анализировать»)
-   и вкладками («Текст», «Голос»).
+   Цель: чтобы лейблы-плашки вроде «Intent (намерение)», «Intent confidence»,
+   «Topic cluster id», «Topic name», «Summary / статус», «Полный JSON-ответ»,
+   «Реплики (JSON, для отладки)» визуально НЕ выглядели как фиолетовые
+   action-кнопки («Анализировать как один текст», «Очистить»,
+   «Распознать и анализировать») и табы («Текст», «Голос»).
 
-   Подход: задаём собственный нейтральный slate/blue-gray фон именно
-   у label-обёрток Gradio (`.block-label`, `.label-wrap`). Эти классы
-   Gradio навешивает на подписи компонентов Textbox/Number/JSON и НЕ
-   использует для `button` или табов (`[role="tab"]`, `.tab-nav button`),
-   поэтому action-кнопки и вкладки сохранят свой фиолетовый акцент. */
-.gradio-container .block-label,
-.gradio-container .label-wrap {
-    background: #e2e8f0 !important;        /* slate-200 */
-    color: #1f2937 !important;             /* slate-800 */
-    border: 1px solid #cbd5e1 !important;  /* slate-300 */
-    border-radius: 6px !important;
-    padding: 2px 8px !important;
-    font-weight: 500 !important;
-    box-shadow: none !important;
+   Почему предыдущая попытка (`.block-label` / `.label-wrap`) не сработала:
+   в Gradio 6 эти CSS-классы НЕ навешиваются на компонент-лейблы.
+   `label-wrap` используется только в Dropdown, а `block-label` — артефакт
+   из старых версий Gradio. Реальные элементы:
+     - плавающая подпись над компонентом — это `<label class="svelte-…">`
+       со стилями `background: var(--block-label-background-fill)`,
+       `color: var(--block-label-text-color)`,
+       `border: var(--block-label-border-width) solid
+                var(--block-label-border-color)`;
+     - заголовок поля ввода (например, «Введите реплику или диалог») —
+       это `<span class="svelte-…">` со стилями
+       `background: var(--block-title-background-fill)`,
+       `color: var(--block-title-text-color)`.
+   Svelte-хэши в именах классов каждую сборку меняются, поэтому селекторы
+   вида `.svelte-19djge9` ненадёжны. Зато CSS-переменные `--block-label-*`
+   и `--block-title-*` стабильны и НЕ используются ни кнопками (там свои
+   `--button-primary-*` / `--button-secondary-*`), ни табами (`--tab-*`),
+   ни блоками-обёртками (`--block-background-fill`). Переопределяем
+   только эти переменные на уровне `.gradio-container` — фиолетовый
+   акцент кнопок/табов сохраняется автоматически. */
+.gradio-container {
+    /* Светлая тема: slate-200 фон + slate-800 текст + slate-300 рамка. */
+    --block-label-background-fill: #e2e8f0;
+    --block-label-text-color: #1f2937;
+    --block-label-border-color: #cbd5e1;
+    --block-label-border-width: 1px;
+    --block-label-radius: 6px;
+    --block-label-shadow: none;
+    --block-label-text-weight: 500;
+    --block-title-background-fill: #e2e8f0;
+    --block-title-text-color: #1f2937;
+    --block-title-border-color: #cbd5e1;
+    --block-title-border-width: 1px;
+    --block-title-radius: 6px;
+    --block-title-text-weight: 500;
 }
 
-/* Тёмная тема: тот же приём, но с тёмным slate/blue-gray. */
+/* Тёмная тема: slate-700 фон + slate-200 текст + slate-600 рамка. */
 @media (prefers-color-scheme: dark) {
-    .gradio-container .block-label,
-    .gradio-container .label-wrap {
-        background: #334155 !important;        /* slate-700 */
-        color: #e5e7eb !important;             /* slate-200 */
-        border: 1px solid #475569 !important;  /* slate-600 */
+    .gradio-container {
+        --block-label-background-fill: #334155;
+        --block-label-text-color: #e5e7eb;
+        --block-label-border-color: #475569;
+        --block-title-background-fill: #334155;
+        --block-title-text-color: #e5e7eb;
+        --block-title-border-color: #475569;
     }
 }
-.dark .gradio-container .block-label,
-.gradio-container.dark .block-label,
-[data-theme="dark"] .gradio-container .block-label,
-.dark .gradio-container .label-wrap,
-.gradio-container.dark .label-wrap,
-[data-theme="dark"] .gradio-container .label-wrap {
-    background: #334155 !important;
-    color: #e5e7eb !important;
-    border: 1px solid #475569 !important;
+.dark .gradio-container,
+.gradio-container.dark,
+.dark.gradio-container,
+[data-theme="dark"] .gradio-container {
+    --block-label-background-fill: #334155;
+    --block-label-text-color: #e5e7eb;
+    --block-label-border-color: #475569;
+    --block-title-background-fill: #334155;
+    --block-title-text-color: #e5e7eb;
+    --block-title-border-color: #475569;
 }
 
 /* ===== Мобильный layout =====
