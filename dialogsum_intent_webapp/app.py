@@ -575,6 +575,37 @@ body.dark .gradio-container .itmo-hints-v2,
     --block-title-border-color: #475569;
 }
 
+/* ===== Кнопки «Очистить» — красный hover/focus/active =====
+   Кнопки `Очистить` и `Очистить голосовой ввод` помечены классом
+   `danger-clear-button` (через elem_classes у gr.Button). По умолчанию
+   они остаются обычными secondary-кнопками Gradio (variant="secondary"),
+   но при наведении/фокусе/нажатии становятся красными: красный фон,
+   белый текст, тёмно-красная рамка. Это визуально отделяет деструктивное
+   действие (сброс ввода и результатов) от обычных primary-кнопок
+   («Анализировать как один текст», «Анализировать по репликам»,
+   «Распознать и анализировать»), которые остаются фиолетовыми.
+   Селекторы цепляемся за `.danger-clear-button button`, чтобы перебить
+   `--button-secondary-*` и системный hover Gradio. Не трогаем табы
+   («Текст», «Голос») и primary-кнопки. */
+.gradio-container .danger-clear-button button:hover,
+.gradio-container .danger-clear-button button:focus-visible,
+.gradio-container .danger-clear-button button:active,
+.gradio-container button.danger-clear-button:hover,
+.gradio-container button.danger-clear-button:focus-visible,
+.gradio-container button.danger-clear-button:active {
+    background: #dc2626 !important;
+    background-image: none !important;
+    background-color: #dc2626 !important;
+    color: #ffffff !important;
+    border-color: #991b1b !important;
+    box-shadow: 0 0 0 1px #991b1b inset !important;
+}
+.gradio-container .danger-clear-button button:focus-visible,
+.gradio-container button.danger-clear-button:focus-visible {
+    outline: 2px solid #991b1b !important;
+    outline-offset: 2px;
+}
+
 /* ===== Мобильный layout =====
    Базовая раскладка шапки уже вертикальная (column) и работает одинаково
    на desktop и mobile, поэтому здесь корректируем только мелкие детали
@@ -658,7 +689,11 @@ def build_demo() -> gr.Blocks:
                         with gr.Row():
                             text_btn = gr.Button("Анализировать как один текст", variant="primary")
                             text_utt_btn = gr.Button("Анализировать по репликам", variant="primary")
-                            text_clear_btn = gr.Button("Очистить", variant="secondary")
+                            text_clear_btn = gr.Button(
+                                "Очистить",
+                                variant="secondary",
+                                elem_classes=["danger-clear-button"],
+                            )
                         gr.Examples(
                             examples=TEXT_EXAMPLES,
                             inputs=[text_input],
@@ -746,7 +781,11 @@ def build_demo() -> gr.Blocks:
                         )
                         with gr.Row():
                             audio_btn = gr.Button("Распознать и анализировать", variant="primary")
-                            audio_clear_btn = gr.Button("Очистить голосовой ввод", variant="secondary")
+                            audio_clear_btn = gr.Button(
+                                "Очистить голосовой ввод",
+                                variant="secondary",
+                                elem_classes=["danger-clear-button"],
+                            )
                         gr.Markdown(
                             "<span class='small-note'>STT: faster-whisper. По умолчанию модель "
                             f"<code>{os.environ.get('WHISPER_MODEL_SIZE', 'medium')}</code>. "
