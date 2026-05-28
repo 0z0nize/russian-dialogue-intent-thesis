@@ -21,8 +21,62 @@ import model_pipeline as mp
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Public site / social preview configuration
+# ---------------------------------------------------------------------------
+# Базовый публичный URL сайта — используется для абсолютных ссылок в
+# Open Graph / Twitter card. Переопределяется через переменную окружения
+# PUBLIC_SITE_URL при необходимости (например, для staging-домена).
+PUBLIC_SITE_URL = os.environ.get("PUBLIC_SITE_URL", "https://intent-demo.online").rstrip("/")
+
+# Файл миниатюры для соц-сетей (1200x630, JPEG). Лежит рядом с app.py.
+ASSETS_DIR = Path(__file__).parent / "assets"
+PREVIEW_IMAGE_FILENAME = "preview.jpg"
+PREVIEW_IMAGE_PATH = ASSETS_DIR / PREVIEW_IMAGE_FILENAME
+PREVIEW_IMAGE_URL = f"{PUBLIC_SITE_URL}/static/{PREVIEW_IMAGE_FILENAME}"
+
+OG_TITLE = "DialogSum-RU · распознавание намерений в русскоязычных диалогах"
+OG_DESCRIPTION = (
+    "Демо магистерской ВКР НИУ ИТМО: intent-классификация, тематические "
+    "кластеры и сводка по русскоязычным диалогам (DialogSum-RU)."
+)
+
+
+def _build_social_head_html() -> str:
+    """HTML-фрагмент с Open Graph / Twitter meta-тегами для intent-demo.online.
+
+    Внедряется в <head> через параметр `head=` Gradio. Заголовки используют
+    абсолютные URL, чтобы scrapers (Twitter, Facebook, Telegram) могли
+    корректно подтянуть превью.
+    """
+    return (
+        f'<meta property="og:type" content="website" />\n'
+        f'<meta property="og:url" content="{PUBLIC_SITE_URL}/" />\n'
+        f'<meta property="og:title" content="{OG_TITLE}" />\n'
+        f'<meta property="og:description" content="{OG_DESCRIPTION}" />\n'
+        f'<meta property="og:image" content="{PREVIEW_IMAGE_URL}" />\n'
+        f'<meta property="og:image:width" content="1200" />\n'
+        f'<meta property="og:image:height" content="630" />\n'
+        f'<meta name="twitter:card" content="summary_large_image" />\n'
+        f'<meta name="twitter:url" content="{PUBLIC_SITE_URL}/" />\n'
+        f'<meta name="twitter:title" content="{OG_TITLE}" />\n'
+        f'<meta name="twitter:description" content="{OG_DESCRIPTION}" />\n'
+        f'<meta name="twitter:image" content="{PREVIEW_IMAGE_URL}" />\n'
+    )
+
+
+SOCIAL_HEAD_HTML = _build_social_head_html()
+
 # Прогрузим артефакты сразу при импорте (whisper и RuBERT всё равно ленивы)
 mp.load_artifacts(os.environ.get("MODELS_DIR", "models"))
+
+# Разрешаем Gradio отдавать файлы из assets/ как статику. Без этого Gradio 6
+# по умолчанию блокирует чтение произвольных путей с диска.
+try:
+    if PREVIEW_IMAGE_PATH.exists():
+        gr.set_static_paths(paths=[str(ASSETS_DIR)])
+except Exception as exc:  # pragma: no cover - не критично для UI
+    logger.warning("gr.set_static_paths failed: %s", exc)
 
 
 def _status_banner_md() -> str:
@@ -709,12 +763,64 @@ def build_demo() -> gr.Blocks:
 demo = build_demo()
 
 
-if __name__ == "__main__":
-    demo.queue()
-    launch_kwargs: Dict[str, Any] = dict(
-        server_name="0.0.0.0", server_port=7860, share=False
+def _build_fastapi_app():
+    """Собирает FastAPI приложение с примонтированным Gradio и /static.
+
+    Это даёт нам надёжный публичный URL для preview.jpg
+    (`{PUBLIC_SITE_URL}/static/preview.jpg`), который scrapers Open Graph /
+    Twitter могут забрать без авторизации и без зависимости от внутреннего
+    file API Gradio.
+    """
+    from fastapi import FastAPI
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    fastapi_app = FastAPI(title="DialogSum-RU intent demo")
+
+    if ASSETS_DIR.is_dir():
+        fastapi_app.mount(
+            "/static",
+            StaticFiles(directory=str(ASSETS_DIR)),
+            name="static",
+        )
+
+    # Удобный короткий путь /preview.jpg → assets/preview.jpg, чтобы og:image
+    # можно было оставлять и без префикса /static (резервный вариант).
+    @fastapi_app.get("/preview.jpg", include_in_schema=False)
+    def _preview_image():
+        return FileResponse(str(PREVIEW_IMAGE_PATH), media_type="image/jpeg")
+
+    # Favicon из той же миниатюры — без необходимости отдельного .ico.
+    @fastapi_app.get("/favicon.ico", include_in_schema=False)
+    def _favicon():
+        return FileResponse(str(PREVIEW_IMAGE_PATH), media_type="image/jpeg")
+
+    mount_kwargs: Dict[str, Any] = dict(
+        app=fastapi_app,
+        blocks=demo,
+        path="/",
+        allowed_paths=[str(ASSETS_DIR)],
+        favicon_path=str(PREVIEW_IMAGE_PATH) if PREVIEW_IMAGE_PATH.exists() else None,
+        head=SOCIAL_HEAD_HTML,
     )
     if _gradio_major_version() >= 6:
-        launch_kwargs["theme"] = gr.themes.Soft()
-        launch_kwargs["css"] = CSS
-    demo.launch(**launch_kwargs)
+        mount_kwargs["theme"] = gr.themes.Soft()
+        mount_kwargs["css"] = CSS
+
+    return gr.mount_gradio_app(**mount_kwargs)
+
+
+# Экспортируем готовое FastAPI-приложение, чтобы его можно было запускать
+# через `uvicorn app:fastapi_app` при необходимости.
+fastapi_app = _build_fastapi_app()
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    demo.queue()
+    uvicorn.run(
+        fastapi_app,
+        host=os.environ.get("HOST", "0.0.0.0"),
+        port=int(os.environ.get("PORT", "7860")),
+    )
