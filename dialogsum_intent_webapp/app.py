@@ -642,6 +642,16 @@ TEXT_EXAMPLES = [
     [DIALOG_EXAMPLE_TRAIN_TICKET],
 ]
 
+# Короткие лейблы для статических кнопок-примеров. Соответствуют
+# TEXT_EXAMPLES 1:1 по индексу. Сами тексты примеров подставляются в
+# поле ввода кликом по кнопке — без обращения к /gradio_api/dataset.
+TEXT_EXAMPLE_LABELS = [
+    "Билет на концерт",
+    "Запись на собеседование",
+    "Жалоба на посылку",
+    "Диалог: билет на поезд",
+]
+
 
 def _gradio_major_version() -> int:
     try:
@@ -692,11 +702,28 @@ def build_demo() -> gr.Blocks:
                                 variant="secondary",
                                 elem_classes=["danger-clear-button"],
                             )
-                        gr.Examples(
-                            examples=TEXT_EXAMPLES,
-                            inputs=[text_input],
-                            label="Готовые примеры (нажмите, чтобы подставить в поле)",
+                        # Статические кнопки вместо gr.Examples: внутренний
+                        # Dataset-виджет gr.Examples тянет данные через
+                        # /gradio_api/dataset и за nginx-прокси на первом
+                        # рендере зависает в «Загрузка…». Кнопки с
+                        # queue=False подставляют текст без обращения к
+                        # очереди Gradio.
+                        gr.Markdown(
+                            "**Готовые примеры** (нажмите, чтобы подставить в поле)"
                         )
+                        with gr.Row():
+                            example_buttons = [
+                                gr.Button(label, variant="secondary", size="sm")
+                                for label in TEXT_EXAMPLE_LABELS
+                            ]
+                        for btn, example in zip(example_buttons, TEXT_EXAMPLES):
+                            example_text = example[0]
+                            btn.click(
+                                lambda txt=example_text: txt,
+                                inputs=None,
+                                outputs=[text_input],
+                                queue=False,
+                            )
                         gr.HTML(TEST_THEMES_HTML)
                     with gr.Column(scale=4):
                         # Все output-компоненты получают явные пустые value,
