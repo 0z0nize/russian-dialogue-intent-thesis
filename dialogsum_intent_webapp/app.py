@@ -10,14 +10,22 @@ Gradio Blocks UI для демо ВКР по русскоязычному рас
 from __future__ import annotations
 
 import base64
+import inspect
 import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-import gradio as gr
+# Отключаем аналитический бекенд Gradio до import: переменная окружения
+# GRADIO_ANALYTICS_ENABLED — официальный способ выключить телеметрию,
+# работает во всех версиях Gradio (5.x и 6.x). В отличие от kwarg
+# analytics_enabled, который в Gradio 6 принимает только Blocks(), но
+# не Blocks.launch() — там это вызывает TypeError.
+os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
 
-import model_pipeline as mp
+import gradio as gr  # noqa: E402  (после env var, см. выше)
+
+import model_pipeline as mp  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -874,24 +882,45 @@ def build_demo() -> gr.Blocks:
 demo = build_demo()
 
 
+def _filter_launch_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """Оставляет только те kwargs, которые есть в сигнатуре Blocks.launch()
+    у установленной версии Gradio. Разные версии Gradio расходятся по
+    набору параметров (например, в Gradio 6.x в launch() нет
+    analytics_enabled и show_api; в Gradio 5.x — нет theme/css). Без
+    фильтрации запуск падал бы с TypeError на машине пользователя."""
+    try:
+        params = inspect.signature(gr.Blocks.launch).parameters
+    except (TypeError, ValueError):
+        return kwargs
+    accepts_var_keyword = any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
+    if accepts_var_keyword:
+        return kwargs
+    return {k: v for k, v in kwargs.items() if k in params}
+
+
 if __name__ == "__main__":
     # Очередь нужна для тяжёлых колбэков (analyze/transcribe), но не
     # должна влиять на первый рендер: clear-колбэки уже идут с
     # queue=False, а статические компоненты получают value на момент
     # build_demo() и не ждут WebSocket-апдейтов.
     demo.queue()
+    # Аналитика Gradio уже выключена через env var GRADIO_ANALYTICS_ENABLED
+    # в самом верху файла — это работает во всех версиях. Передавать
+    # analytics_enabled в Blocks.launch() нельзя: в Gradio 6 этого
+    # параметра в сигнатуре launch() нет (он есть только в Blocks(...)),
+    # и запуск падает с TypeError.
     launch_kwargs: Dict[str, Any] = dict(
         server_name="0.0.0.0",
         server_port=7860,
         share=False,
-        # Отключаем аналитический бекенд Gradio и /docs / /openapi роуты:
-        # они тянут дополнительные fetch-запросы на старте и иногда
-        # подвешивают первую загрузку страницы за корпоративным прокси
-        # или nginx без проксирования всех путей.
-        analytics_enabled=False,
+        # show_api отключает /docs / /openapi роуты. В Gradio 5 параметр
+        # есть в launch(); в Gradio 6 его убрали из launch() — фильтр
+        # ниже его молча отбросит, чтобы не уронить запуск.
         show_api=False,
     )
     if _gradio_major_version() >= 6:
         launch_kwargs["theme"] = gr.themes.Soft()
         launch_kwargs["css"] = CSS
-    demo.launch(**launch_kwargs)
+    demo.launch(**_filter_launch_kwargs(launch_kwargs))
