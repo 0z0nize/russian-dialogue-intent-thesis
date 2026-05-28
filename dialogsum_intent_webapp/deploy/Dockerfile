@@ -28,6 +28,7 @@ RUN pip install --upgrade pip \
 COPY app.py /app/app.py
 COPY model_pipeline.py /app/model_pipeline.py
 COPY models /app/models
+COPY assets /app/assets
 COPY README.md /app/README.md
 
 EXPOSE 7860

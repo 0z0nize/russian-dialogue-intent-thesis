@@ -3,8 +3,6 @@
 #   cd dialogsum_intent_webapp/deploy
 #   docker compose up --build -d
 
-version: "3.9"
-
 services:
   webapp:
     build:
