@@ -653,13 +653,6 @@ def build_demo() -> gr.Blocks:
     with gr.Blocks(**blocks_kwargs) as demo:
         gr.HTML(HEADER_HTML)
         gr.Markdown(INTRO_MD)
-        # Статус-баннер уже содержит HTML-разметку (<div>, <code>, <b>),
-        # поэтому отдаём его как gr.HTML, а не gr.Markdown. Это убирает
-        # ещё один компонент с processing-плейсхолдером «Загрузка...» на
-        # первом рендере: gr.HTML с заранее вычисленным value рендерится
-        # синхронно из server-side state и не зависит от первого
-        # WebSocket-хэндшейка очереди Gradio.
-        gr.HTML(_status_banner_md())
 
         with gr.Tabs():
             # ---------------- Tab 1: Текст ----------------
@@ -839,6 +832,14 @@ def build_demo() -> gr.Blocks:
                     outputs=[audio_input] + audio_outputs,
                     queue=False,
                 )
+
+        # Статус-баннер уже содержит HTML-разметку (<div>, <code>, <b>),
+        # поэтому отдаём его как gr.HTML, а не gr.Markdown. Это убирает
+        # ещё один компонент с processing-плейсхолдером «Загрузка...» на
+        # первом рендере: gr.HTML с заранее вычисленным value рендерится
+        # синхронно из server-side state и не зависит от первого
+        # WebSocket-хэндшейка очереди Gradio.
+        gr.HTML(_status_banner_md())
 
         gr.Markdown(
             "<span class='small-note'>Проект: ВКР «Семантический анализ русскоязычных диалогов "
