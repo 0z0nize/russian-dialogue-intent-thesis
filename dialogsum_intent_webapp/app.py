@@ -311,7 +311,28 @@ TEST_THEMES_HTML = """
 """
 
 CSS = """
-.gradio-container {max-width: 1100px !important;}
+/* Центрируем основной контейнер: max-width без margin:auto оставляет
+   контейнер прижатым к левому краю. Явно задаём margin-left/right: auto
+   и аккуратные padding, чтобы контент стоял по центру на desktop и
+   не упирался в края на mobile. */
+.gradio-container,
+.gradio-container.gradio-container {
+    max-width: 1100px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    box-sizing: border-box !important;
+}
+/* Внешние обёртки Gradio (web component + body) тоже должны быть
+   полной ширины и центрировать вложенный контейнер. */
+html, body {margin: 0; padding: 0; width: 100%;}
+gradio-app, .gradio-app, body > .gradio-container {
+    display: block;
+    width: 100%;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
 #json-out textarea, #json-out pre {font-size: 0.85rem;}
 .small-note {color: #6b6b6b; font-size: 0.85rem;}
 
@@ -537,7 +558,13 @@ def build_demo() -> gr.Blocks:
     with gr.Blocks(**blocks_kwargs) as demo:
         gr.HTML(HEADER_HTML)
         gr.Markdown(INTRO_MD)
-        gr.Markdown(_status_banner_md())
+        # Статус-баннер уже содержит HTML-разметку (<div>, <code>, <b>),
+        # поэтому отдаём его как gr.HTML, а не gr.Markdown. Это убирает
+        # ещё один компонент с processing-плейсхолдером «Загрузка...» на
+        # первом рендере: gr.HTML с заранее вычисленным value рендерится
+        # синхронно из server-side state и не зависит от первого
+        # WebSocket-хэндшейка очереди Gradio.
+        gr.HTML(_status_banner_md())
 
         with gr.Tabs():
             # ---------------- Tab 1: Текст ----------------
@@ -581,25 +608,32 @@ def build_demo() -> gr.Blocks:
                             "режет ввод по непустым строкам.</span>"
                         )
                     with gr.Column(scale=4):
-                        t_intent = gr.Textbox(label="Intent (намерение)")
-                        t_intent_conf = gr.Number(label="Intent confidence", precision=3)
-                        t_intent_mode = gr.Textbox(label="Intent mode (источник предсказания)")
+                        # Все output-компоненты получают явные пустые value,
+                        # чтобы первый рендер был полностью статическим:
+                        # без value Gradio показывает «Загрузка...» до тех
+                        # пор, пока не дойдёт первый websocket-апдейт от
+                        # очереди — а за прокси первый WS-хэндшейк иногда
+                        # подвисает, и компоненты остаются в loading.
+                        t_intent = gr.Textbox(label="Intent (намерение)", value="")
+                        t_intent_conf = gr.Number(label="Intent confidence", precision=3, value=0.0)
+                        t_intent_mode = gr.Textbox(label="Intent mode (источник предсказания)", value="")
                         with gr.Row():
-                            t_topic_id = gr.Number(label="Topic cluster id", precision=0)
-                            t_topic_name = gr.Textbox(label="Topic name")
-                        t_topic_desc = gr.Textbox(label="Topic description", lines=2)
-                        t_topic_words = gr.Textbox(label="Top words")
-                        t_summary = gr.Textbox(label="Summary / статус", lines=2)
-                        t_json = gr.JSON(label="Полный JSON-ответ", elem_id="json-out")
+                            t_topic_id = gr.Number(label="Topic cluster id", precision=0, value=-1)
+                            t_topic_name = gr.Textbox(label="Topic name", value="")
+                        t_topic_desc = gr.Textbox(label="Topic description", lines=2, value="")
+                        t_topic_words = gr.Textbox(label="Top words", value="")
+                        t_summary = gr.Textbox(label="Summary / статус", lines=2, value="")
+                        t_json = gr.JSON(label="Полный JSON-ответ", elem_id="json-out", value=None)
                         t_utt_table = gr.Dataframe(
                             headers=UTTERANCE_TABLE_HEADERS,
                             datatype=["number", "str", "str", "str", "number", "str"],
                             label="Анализ по репликам (DialogSum-RU)",
                             wrap=True,
                             interactive=False,
+                            value=[],
                         )
                         t_utt_json = gr.JSON(
-                            label="Реплики (JSON, для отладки)", elem_id="json-out"
+                            label="Реплики (JSON, для отладки)", elem_id="json-out", value=None
                         )
 
                 text_outputs = [
@@ -631,6 +665,7 @@ def build_demo() -> gr.Blocks:
                     lambda: ("",) + _empty_result_tuple() + ([], None),
                     inputs=None,
                     outputs=[text_input] + text_outputs + text_utt_outputs,
+                    queue=False,
                 )
 
             # ---------------- Tab 2: Голос ----------------
@@ -661,17 +696,20 @@ def build_demo() -> gr.Blocks:
                             "</div></div>"
                         )
                     with gr.Column(scale=4):
-                        a_text = gr.Textbox(label="Распознанный текст", lines=4)
-                        a_intent = gr.Textbox(label="Intent (намерение)")
-                        a_intent_conf = gr.Number(label="Intent confidence", precision=3)
-                        a_intent_mode = gr.Textbox(label="Intent mode (источник предсказания)")
+                        # Те же пустые value, что и во вкладке «Текст»:
+                        # гарантируем статический первый рендер без
+                        # ожидания первого WS-апдейта очереди.
+                        a_text = gr.Textbox(label="Распознанный текст", lines=4, value="")
+                        a_intent = gr.Textbox(label="Intent (намерение)", value="")
+                        a_intent_conf = gr.Number(label="Intent confidence", precision=3, value=0.0)
+                        a_intent_mode = gr.Textbox(label="Intent mode (источник предсказания)", value="")
                         with gr.Row():
-                            a_topic_id = gr.Number(label="Topic cluster id", precision=0)
-                            a_topic_name = gr.Textbox(label="Topic name")
-                        a_topic_desc = gr.Textbox(label="Topic description", lines=2)
-                        a_topic_words = gr.Textbox(label="Top words")
-                        a_summary = gr.Textbox(label="Summary / статус", lines=2)
-                        a_json = gr.JSON(label="Полный JSON-ответ", elem_id="json-out")
+                            a_topic_id = gr.Number(label="Topic cluster id", precision=0, value=-1)
+                            a_topic_name = gr.Textbox(label="Topic name", value="")
+                        a_topic_desc = gr.Textbox(label="Topic description", lines=2, value="")
+                        a_topic_words = gr.Textbox(label="Top words", value="")
+                        a_summary = gr.Textbox(label="Summary / статус", lines=2, value="")
+                        a_json = gr.JSON(label="Полный JSON-ответ", elem_id="json-out", value=None)
 
                 audio_outputs = [
                     a_text,
@@ -696,6 +734,7 @@ def build_demo() -> gr.Blocks:
                     lambda: (None, "") + _empty_result_tuple(),
                     inputs=None,
                     outputs=[audio_input] + audio_outputs,
+                    queue=False,
                 )
 
         gr.Markdown(
