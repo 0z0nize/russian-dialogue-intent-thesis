@@ -329,17 +329,18 @@ CSS = """
 #json-out textarea, #json-out pre {font-size: 0.85rem;}
 .small-note {color: #6b6b6b; font-size: 0.85rem;}
 
-/* ===== ITMO header v2 — стабильная разметка без абсолютного позиционирования ===== */
+/* ===== ITMO header v2 — Вариант Б: шапка как часть страницы, без тяжёлой карточки ===== */
 .gradio-container .itmo-header-v2 {
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 18px;
-    margin: 4px 0 8px 0;
-    padding: 12px 14px;
-    background: #f4f7fb;
-    border: 1px solid #d6e1ef;
-    border-radius: 10px;
+    gap: 16px;
+    margin: 2px 0 6px 0;
+    padding: 4px 0 8px 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
     box-sizing: border-box;
     width: 100%;
     overflow: visible;
@@ -355,7 +356,7 @@ CSS = """
 }
 .gradio-container .itmo-header-v2 .itmo-logo-img {
     display: block;
-    height: 64px;
+    height: 56px;
     width: auto;
     max-width: 100%;
     object-fit: contain;
@@ -363,10 +364,10 @@ CSS = """
 }
 .gradio-container .itmo-header-v2 .itmo-logo-fallback {
     display: inline-block;
-    padding: 10px 14px;
+    padding: 8px 12px;
     background: #0f1a2e;
     color: #ffffff;
-    border-radius: 8px;
+    border-radius: 6px;
     font-weight: 700;
     letter-spacing: 2px;
 }
@@ -378,21 +379,24 @@ CSS = """
     overflow-wrap: break-word;
 }
 .gradio-container .itmo-header-v2__h1 {
-    margin: 0 0 6px 0;
-    font-size: 1.25rem;
+    margin: 0 0 4px 0;
+    font-size: 1.2rem;
     line-height: 1.3;
-    color: #1a1a1a;
+    color: #1a1a1a !important;
+    font-weight: 700;
     word-wrap: break-word;
     overflow-wrap: break-word;
 }
 .gradio-container .itmo-header-v2__meta {
     font-size: 0.9rem;
-    color: #1a1a1a;
+    color: #1a1a1a !important;
     word-wrap: break-word;
     overflow-wrap: break-word;
+    margin-top: 2px;
 }
-.gradio-container .itmo-header-v2__meta b {color: #1a1a1a;}
-.gradio-container .itmo-header-v2__meta a {color: #0f4ea8;}
+.gradio-container .itmo-header-v2__meta b {color: #1a1a1a !important;}
+.gradio-container .itmo-header-v2__meta a {color: #0f4ea8 !important; text-decoration: underline;}
+.gradio-container .itmo-header-v2__meta a:hover {color: #0a3a85 !important;}
 
 /* ===== ITMO hints v2 — статический блок, без <details> ===== */
 .gradio-container .itmo-hints-v2 {
@@ -450,14 +454,18 @@ CSS = """
 }
 .gradio-container .itmo-hints-v2--compact .itmo-hints-v2__body {color: #1a1a1a;}
 
-/* ===== Мобильная версия (<=768px): column-стек, центр, без overflow ===== */
+/* ===== Мобильная версия (<=768px): строго вертикальный стек ===== */
 @media (max-width: 768px) {
     .gradio-container .itmo-header-v2 {
+        display: flex;
         flex-direction: column;
         align-items: center;
         text-align: center;
-        gap: 10px;
-        padding: 10px 12px;
+        gap: 8px;
+        padding: 4px 0 8px 0;
+        background: transparent;
+        border: none;
+        box-shadow: none;
     }
     .gradio-container .itmo-header-v2__logo {
         width: 100%;
@@ -474,13 +482,19 @@ CSS = """
     .gradio-container .itmo-header-v2__title {
         width: 100%;
         text-align: center;
+        padding: 0 4px;
     }
     .gradio-container .itmo-header-v2__h1 {
-        font-size: 1.1rem;
-        line-height: 1.3;
+        font-size: 16px;
+        line-height: 1.35;
+        color: #1a1a1a !important;
+        margin: 0 0 6px 0;
     }
     .gradio-container .itmo-header-v2__meta {
-        font-size: 0.88rem;
+        font-size: 14px;
+        line-height: 1.4;
+        color: #1a1a1a !important;
+        margin-top: 4px;
     }
     .gradio-container .itmo-hints-v2__themes {
         columns: 1;
