@@ -699,28 +699,92 @@ body.dark .gradio-container .itmo-hints-v2,
    («Topic id» + «Topic name» в одну строку, левая/правая половины
    интерфейса в две колонки), страница растягивается за пределы viewport
    и появляется горизонтальный скролл всей страницы.
-   Решение: на mobile (<= 900px) все Row / .form / row-обёртки переводим
-   в flex-direction: column и сбрасываем gr-Column flex-basis в 100%,
-   чтобы каждая ячейка всегда занимала всю ширину родителя. Также
-   принудительно даём width:100% / max-width:100% / min-width:0 — это
-   гарантирует, что длинный контент не «вытолкнет» соседа.
-   На desktop (> 900px) ничего не меняем — двухколоночная компоновка
-   (scale=3 vs scale=4) сохраняется. */
-@media (max-width: 900px) {
+
+   Что изменилось по сравнению с предыдущей версией:
+   1) Триггер расширен до `(max-width: 1100px), (pointer: coarse)`.
+      Прошлый порог 900px не покрывал реальные ландшафтные мобильные
+      и планшеты Hybrid-ширины (914px / 1024px CSS-px после zoom),
+      и часть телефонов с DPR != 1 фактически рендерилась по
+      desktop-правилам. `pointer: coarse` гарантированно ловит любой
+      сенсорный девайс независимо от ширины viewport.
+   2) Вместо нестабильных универсальных селекторов `[class*="row"]` /
+      `[class*="column"]`, которые в Gradio 6 матчат лишние Svelte-
+      классы (`row-form`, `column-form`, `row-button-row` и т. п.) и
+      из-за специфичности проигрывают inline-стилям Gradio, мы
+      опираемся на наши собственные стабильные `elem_classes`:
+      `.responsive-stack` (gr.Row рабочей области) и
+      `.input-column` / `.output-column` (gr.Column внутри Row).
+      Это даёт более высокий приоритет селектора и не зависит от
+      того, какие классы Svelte сгенерирует следующая сборка Gradio.
+   3) Для `.responsive-stack` мы НЕ полагаемся только на
+      `flex-direction: column`: Gradio 6 в некоторых сборках
+      переключает Row на `display: grid` с inline
+      `grid-template-columns: <scale1>fr <scale2>fr`. Поэтому
+      одновременно задаём `display: flex` + `flex-direction: column`
+      и (для grid-фоллбэка) `grid-template-columns: 1fr` — что бы
+      Gradio не выбрал, layout схлопывается в одну колонку.
+   4) Для дочерних `.input-column` / `.output-column` фиксируем
+      `flex: 0 0 100%` (а не `1 1 100%`, чтобы избежать «дележа» при
+      округлении) и `grid-column: 1 / -1` для grid-режима. Также
+      `order` — input выше, output ниже: в `.responsive-stack` уже
+      такой порядок в HTML, но дублируем `order` явно, чтобы Gradio
+      случайно не пересортировал children после ре-рендера.
+   5) На desktop (> 1100px) и при `pointer: fine` (мышь/тачпад без
+      сенсора) ничего не меняем — двухколоночная компоновка
+      (scale=3 vs scale=4) сохраняется. */
+@media (max-width: 1100px), (pointer: coarse) {
+    /* Принудительно складываем нашу рабочую Row в одну колонку.
+       Покрываем оба возможных layout-режима Gradio Row: flex и grid. */
+    .gradio-container .responsive-stack,
+    .gradio-container .responsive-stack.gr-row,
+    .gradio-container .responsive-stack[class*="row"] {
+        display: flex !important;
+        flex-direction: column !important;
+        flex-wrap: nowrap !important;
+        grid-template-columns: 1fr !important;
+        grid-auto-flow: row !important;
+        gap: 8px !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+    }
+    /* Дочерние колонки внутри .responsive-stack: всегда 100% ширины,
+       порядок — input сверху, output снизу. */
+    .gradio-container .responsive-stack > .input-column,
+    .gradio-container .responsive-stack > .output-column,
+    .gradio-container .responsive-stack .input-column,
+    .gradio-container .responsive-stack .output-column {
+        flex: 0 0 100% !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        grid-column: 1 / -1 !important;
+        box-sizing: border-box !important;
+    }
+    .gradio-container .responsive-stack > .input-column,
+    .gradio-container .responsive-stack .input-column {order: 1 !important;}
+    .gradio-container .responsive-stack > .output-column,
+    .gradio-container .responsive-stack .output-column {order: 2 !important;}
+    /* Подстраховка — все вложенные Row/Column тоже схлопываем,
+       включая внутренний gr.Row с «Topic id + Topic name» и Row с
+       кнопками. */
     .gradio-container .gr-row,
     .gradio-container [class*="row"]:not([class*="row-"]):not(.itmo-header-v2),
     .gradio-container .form,
     .gradio-container .gr-form {
         flex-direction: column !important;
-        flex-wrap: wrap !important;
+        flex-wrap: nowrap !important;
+        grid-template-columns: 1fr !important;
         gap: 8px !important;
     }
     .gradio-container .gr-column,
     .gradio-container [class*="column"]:not(.itmo-header-v2):not(.itmo-header-v2__title) {
-        flex: 1 1 100% !important;
+        flex: 0 0 100% !important;
         width: 100% !important;
         max-width: 100% !important;
         min-width: 0 !important;
+        grid-column: 1 / -1 !important;
     }
     .gradio-container .gr-block,
     .gradio-container .block {
@@ -798,8 +862,8 @@ def build_demo() -> gr.Blocks:
         with gr.Tabs():
             # ---------------- Tab 1: Текст ----------------
             with gr.Tab("Текст"):
-                with gr.Row():
-                    with gr.Column(scale=3):
+                with gr.Row(elem_classes=["responsive-stack"]):
+                    with gr.Column(scale=3, elem_classes=["input-column"]):
                         text_input = gr.Textbox(
                             label="Введите реплику или диалог",
                             placeholder=(
@@ -848,7 +912,7 @@ def build_demo() -> gr.Blocks:
                                 queue=False,
                             )
                         gr.HTML(TEST_THEMES_HTML)
-                    with gr.Column(scale=4):
+                    with gr.Column(scale=4, elem_classes=["output-column"]):
                         # Все output-компоненты получают явные пустые value,
                         # чтобы первый рендер был полностью статическим:
                         # без value Gradio показывает «Загрузка...» до тех
@@ -911,8 +975,8 @@ def build_demo() -> gr.Blocks:
 
             # ---------------- Tab 2: Голос ----------------
             with gr.Tab("Голос"):
-                with gr.Row():
-                    with gr.Column(scale=3):
+                with gr.Row(elem_classes=["responsive-stack"]):
+                    with gr.Column(scale=3, elem_classes=["input-column"]):
                         audio_input = gr.Audio(
                             sources=["microphone", "upload"],
                             type="filepath",
@@ -940,7 +1004,7 @@ def build_demo() -> gr.Blocks:
                             "дом / бытовые вопросы, поиск книг, музыкальные события, развлечения."
                             "</div></div>"
                         )
-                    with gr.Column(scale=4):
+                    with gr.Column(scale=4, elem_classes=["output-column"]):
                         # Те же пустые value, что и во вкладке «Текст»:
                         # гарантируем статический первый рендер без
                         # ожидания первого WS-апдейта очереди.
