@@ -246,9 +246,9 @@ def _itmo_logo_img_tag() -> str:
 
 
 def _build_header_html() -> str:
-    """Собирает шапку как простую статическую разметку без флексов
-    с абсолютным позиционированием. Картинка и текст идут блоками,
-    раскладка управляется CSS (десктоп — flex-row, мобильный — column)."""
+    """Собирает шапку как вертикальный стек: логотип сверху по центру,
+    ниже заголовок ВКР, ниже автор/программа, ниже README.
+    Раскладка — всегда колонка, на desktop и mobile одинаково."""
     return (
         '<div class="itmo-header-v2">'
         '  <div class="itmo-header-v2__logo-wrap itmo-header-v2__logo">'
@@ -332,19 +332,20 @@ CSS = """
 .small-note {color: #6b6b6b; font-size: 0.85rem;}
 
 /* ===== ITMO header v2 — Вариант Б: шапка как часть страницы, без тяжёлой карточки =====
-   Цвет текста — адаптивный. По умолчанию (светлая тема) используем тёмный цвет,
-   но через CSS-переменную, чтобы её можно было переопределить из тёмной темы
-   ниже без необходимости переопределять каждое правило.
-   ВНИМАНИЕ: не фиксируем чёрный через !important, иначе на тёмной странице
-   получится «чёрный на чёрном». */
+   Раскладка — ВСЕГДА вертикальный стек (column) на desktop и mobile:
+   логотип сверху по центру, ниже заголовок ВКР, ниже автор/программа, ниже README.
+   Никакого row + gap, никаких desktop-правил с логотипом слева.
+   Цвет текста — адаптивный через CSS-переменную (см. блок тёмной темы ниже),
+   чтобы на тёмной странице не получилось «чёрный на чёрном». */
 .gradio-container .itmo-header-v2 {
     --itmo-header-fg: #1a1a1a;
     --itmo-header-link: #0f4ea8;
     --itmo-header-link-hover: #0a3a85;
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     align-items: center;
-    gap: 16px;
+    text-align: center;
+    gap: 8px;
     margin: 2px 0 6px 0;
     padding: 4px 0 8px 0;
     background: transparent;
@@ -363,15 +364,16 @@ CSS = """
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 0;
+    width: 100%;
+    margin: 0 auto;
 }
 .gradio-container .itmo-header-v2 .itmo-logo-img {
     display: block;
-    height: 56px;
-    width: auto;
-    max-width: 100%;
+    width: min(220px, 70vw);
+    height: auto;
+    max-height: 90px;
     object-fit: contain;
-    margin: 0;
+    margin: 0 auto;
 }
 .gradio-container .itmo-header-v2 .itmo-logo-fallback {
     display: inline-block;
@@ -383,24 +385,31 @@ CSS = """
     letter-spacing: 2px;
 }
 .gradio-container .itmo-header-v2__title {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-width: 0;
     width: 100%;
+    max-width: 920px;
+    margin: 0 auto;
+    text-align: center;
     word-wrap: break-word;
     overflow-wrap: break-word;
 }
 .gradio-container .itmo-header-v2__h1 {
-    margin: 0 0 4px 0;
-    font-size: 1.2rem;
-    line-height: 1.3;
+    margin: 0 auto 4px auto;
+    width: 100%;
+    max-width: 920px;
+    text-align: center;
+    font-size: clamp(18px, 5vw, 28px);
+    line-height: 1.25;
     color: var(--itmo-header-fg);
     font-weight: 700;
     word-wrap: break-word;
     overflow-wrap: break-word;
 }
 .gradio-container .itmo-header-v2__meta {
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     color: var(--itmo-header-fg);
+    text-align: center;
     word-wrap: break-word;
     overflow-wrap: break-word;
     margin-top: 2px;
@@ -495,83 +504,10 @@ body.dark .gradio-container .itmo-header-v2,
 }
 
 /* ===== Мобильный layout =====
-   Используем сразу два механизма, чтобы layout срабатывал и на телефонах,
-   и в узких контейнерах Gradio (контейнер может быть уже окна, например
-   из-за бокового меню):
-   1) @media (max-width: 1024px) — основной триггер по ширине экрана.
-   2) container query @container itmo-header (max-width: 720px) — если
-      браузер поддерживает container-type, шапка переключается в колонку,
-      когда сам контейнер шапки становится узким, независимо от viewport.
-   Для каждого правила используем !important точечно — только на свойствах,
-   управляющих раскладкой (flex-direction, align-items, text-align, order),
-   чтобы переопределить базовый row-layout, но не трогать цвет текста. */
-.gradio-container .itmo-header-v2 {
-    container-type: inline-size;
-    container-name: itmo-header;
-}
-@container itmo-header (max-width: 720px) {
-    .gradio-container .itmo-header-v2 {
-        flex-direction: column !important;
-        align-items: center !important;
-        text-align: center;
-        gap: 8px;
-    }
-    .gradio-container .itmo-header-v2__logo-wrap,
-    .gradio-container .itmo-header-v2__logo {
-        order: 0 !important;
-        width: 100% !important;
-        justify-content: center !important;
-    }
-    .gradio-container .itmo-header-v2__title {
-        order: 1 !important;
-        width: 100% !important;
-        text-align: center;
-        padding: 0 4px;
-    }
-    .gradio-container .itmo-header-v2 .itmo-logo-img {
-        width: min(220px, 80vw);
-        max-height: 90px;
-        height: auto;
-    }
-}
+   Базовая раскладка шапки уже вертикальная (column) и работает одинаково
+   на desktop и mobile, поэтому здесь корректируем только мелкие детали
+   подсказок: переводим список тем в одну колонку на узких экранах. */
 @media (max-width: 1024px) {
-    .gradio-container .itmo-header-v2 {
-        flex-direction: column !important;
-        align-items: center !important;
-        text-align: center;
-        gap: 8px;
-        padding: 4px 0 8px 0;
-    }
-    .gradio-container .itmo-header-v2__logo-wrap,
-    .gradio-container .itmo-header-v2__logo {
-        order: 0 !important;
-        width: 100% !important;
-        justify-content: center !important;
-        margin: 0 auto;
-    }
-    .gradio-container .itmo-header-v2 .itmo-logo-img {
-        width: min(220px, 80vw);
-        max-height: 90px;
-        height: auto;
-        object-fit: contain;
-        margin: 0 auto;
-    }
-    .gradio-container .itmo-header-v2__title {
-        order: 1 !important;
-        width: 100% !important;
-        text-align: center;
-        padding: 0 4px;
-    }
-    .gradio-container .itmo-header-v2__h1 {
-        font-size: 16px;
-        line-height: 1.35;
-        margin: 0 0 6px 0;
-    }
-    .gradio-container .itmo-header-v2__meta {
-        font-size: 14px;
-        line-height: 1.4;
-        margin-top: 4px;
-    }
     .gradio-container .itmo-hints-v2__themes {
         columns: 1;
         -webkit-columns: 1;
