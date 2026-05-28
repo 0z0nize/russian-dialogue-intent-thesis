@@ -298,6 +298,16 @@ TEST_THEMES_HTML = """
         <li>«Не могу найти книгу автора Достоевского, помогите подобрать издание.»</li>
         <li>«Нужно вызвать мастера — стиральная машина не работает.»</li>
       </ul>
+      <div style="margin-top: 8px;">
+        <b>Пример диалога (для режима «По репликам»):</b>
+        <pre class="itmo-dialog-example">#Person1#: Здравствуйте, я купил билет на поезд, но он не появился в приложении.
+#Person2#: Добрый день. Подскажите номер заказа.
+#Person1#: Номер заказа 45821. Отправьте билет ещё раз на почту, пожалуйста.
+#Person2#: Хорошо, сейчас отправлю билет повторно.
+#Person1#: А с какого вокзала отправляется поезд?
+#Person2#: Поезд отправляется с Московского вокзала в 19:40.
+#Person1#: Спасибо, теперь всё понятно. До свидания.</pre>
+      </div>
     </div>
   </div>
 </details>
@@ -336,7 +346,30 @@ CSS = """
 .itmo-hints-examples b {color: #0f4ea8;}
 .itmo-hints-examples ul {margin: 4px 0 0 18px; padding: 0;}
 .itmo-hints-examples li {color: #1a1a1a;}
+.itmo-hints-examples pre.itmo-dialog-example {
+    background: #ffffff; border: 1px solid #d6e1ef; border-radius: 6px;
+    padding: 8px 10px; margin: 4px 0 0 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.82rem; color: #1a1a1a; white-space: pre-wrap;
+}
 """
+
+DIALOG_EXAMPLE_TRAIN_TICKET = (
+    "#Person1#: Здравствуйте, я купил билет на поезд, но он не появился в приложении.\n"
+    "#Person2#: Добрый день. Подскажите номер заказа.\n"
+    "#Person1#: Номер заказа 45821. Отправьте билет ещё раз на почту, пожалуйста.\n"
+    "#Person2#: Хорошо, сейчас отправлю билет повторно.\n"
+    "#Person1#: А с какого вокзала отправляется поезд?\n"
+    "#Person2#: Поезд отправляется с Московского вокзала в 19:40.\n"
+    "#Person1#: Спасибо, теперь всё понятно. До свидания."
+)
+
+TEXT_EXAMPLES = [
+    ["Здравствуйте, я хочу забронировать билет на концерт в Москве."],
+    ["Подскажите, как записаться на собеседование по вакансии аналитика."],
+    ["У меня жалоба: посылка пришла повреждённой, верните деньги."],
+    [DIALOG_EXAMPLE_TRAIN_TICKET],
+]
 
 
 def _gradio_major_version() -> int:
@@ -386,6 +419,11 @@ def build_demo() -> gr.Blocks:
                             text_utt_btn = gr.Button("Анализировать по репликам", variant="primary")
                             text_clear_btn = gr.Button("Очистить", variant="secondary")
                         gr.HTML(TEST_THEMES_HTML)
+                        gr.Examples(
+                            examples=TEXT_EXAMPLES,
+                            inputs=[text_input],
+                            label="Готовые примеры (нажмите, чтобы подставить в поле)",
+                        )
                         gr.Markdown(
                             "<span class='small-note'>Поле <b>Intent mode</b> ниже показывает, "
                             "какой модуль обработал реплику: <code>single_task_rubert_model</code> "
