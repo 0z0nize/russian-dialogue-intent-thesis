@@ -5,6 +5,8 @@
 намерений с улучшением на базе предобученных моделей»** (НИУ ИТМО,
 магистратура «Аналитика данных»).
 
+**Публичное демо:** <https://intent-demo.online>
+
 Приложение принимает на вход русскоязычный текст или голосовую запись и
 возвращает:
 
@@ -123,9 +125,73 @@ python app.py
 
 Затем открыть `http://<SERVER_PUBLIC_IP>:7860`.
 
-> Примечание: запись с микрофона в браузере обычно требует HTTPS-контекста.
-> На голом IP надёжнее использовать **upload** аудиофайла. Для production
-> рекомендуется домен + SSL/Nginx-reverse-proxy перед Gradio.
+> ⚠ Запись с микрофона в браузере (Chrome / Firefox / Safari) разрешена
+> только в **secure context** — то есть на `https://` или `http://localhost`.
+> На «голом» HTTP-IP голосовой ввод работать НЕ будет: вкладка «Голос»
+> упадёт с ошибкой `Permission denied` или `NotAllowedError`. Для
+> production обязательно домен + TLS перед Gradio (см. ниже).
+
+## Продакшен: Yandex Cloud VM + Nginx + Let's Encrypt
+
+Публичный демо-сайт **<https://intent-demo.online>** развёрнут на
+виртуальной машине в Яндекс Облаке. Архитектура:
+
+```
+браузер ──HTTPS──► Nginx (443, TLS от Let's Encrypt)
+                      │  reverse-proxy на 127.0.0.1:7860
+                      ▼
+                  Gradio (app.py) внутри Docker / systemd
+                      │
+                      ├── faster-whisper (STT, lazy)
+                      ├── single-task RuBERT intent (HF Hub artefacts)
+                      └── ruT5 summarizer (HF Hub, lazy)
+```
+
+Ключевые моменты:
+
+- **TLS-сертификат** выпущен через Certbot
+  (`certbot --nginx -d intent-demo.online`) и автоматически продлевается
+  systemd-таймером `certbot.timer`.
+- **HTTPS обязателен** именно для голосового ввода: без `https://` браузер
+  не даёт Gradio запросить `getUserMedia` для микрофона. На текстовый
+  режим это не влияет, но публичный смысл демо — показать в т. ч. голос,
+  поэтому деплой ведётся только на домен с TLS.
+- Nginx проксирует `/` на `127.0.0.1:7860`, прокидывает
+  `Upgrade`/`Connection` для websocket-сессий Gradio и держит
+  `client_max_body_size` достаточным для загрузки аудио-файлов.
+- Артефакты intent-модели и суммаризатора подтягиваются с Hugging Face
+  Hub (`ozonize/dialogsum-ru-intent-rubert`, `IlyaGusev/rut5_base_sum_gazeta`),
+  чтобы образ / репозиторий не таскали 700+ МБ весов.
+
+### Обновление кода на VM (если поменялся репозиторий)
+
+Команды ниже — типовой сценарий «подтянуть свежий main и перезапустить
+сервис». Конкретный путь и имя сервиса могут отличаться на конкретной VM.
+
+```bash
+# 1. зайти на VM
+ssh <user>@intent-demo.online
+
+# 2. подтянуть свежий main
+cd ~/russian-dialogue-intent-thesis
+git fetch origin
+git reset --hard origin/main      # или git pull --ff-only
+
+# 3a. если приложение под docker compose:
+cd dialogsum_intent_webapp/deploy
+docker compose pull               # если образ собирается в реестре
+docker compose up -d --build      # пересобрать локально и перезапустить
+
+# 3b. если приложение под systemd-юнитом:
+sudo systemctl restart dialogsum-intent-webapp
+
+# 4. при правке Nginx-конфига:
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+> Изменения только в README/документации **не требуют** перезапуска
+> Gradio-сервиса — достаточно `git pull` на VM, если хочется чтобы
+> локальная копия репозитория совпадала с GitHub.
 
 ## Запуск через Docker
 
