@@ -690,15 +690,6 @@ def build_demo() -> gr.Blocks:
                             label="Готовые примеры (нажмите, чтобы подставить в поле)",
                         )
                         gr.HTML(TEST_THEMES_HTML)
-                        gr.Markdown(
-                            "<span class='small-note'>Поле <b>Intent mode</b> ниже показывает, "
-                            "какой модуль обработал реплику: <code>single_task_rubert_model</code> "
-                            "(обученные артефакты проекта) или <code>rule_based_fallback</code>. "
-                            "Парсер диалога понимает теги <code>#Person1#:</code> / "
-                            "<code>#Person2#:</code>, а также <code>Говорящий 1:</code>, "
-                            "<code>Спикер 2:</code>. Если тегов нет — режим «По репликам» "
-                            "режет ввод по непустым строкам.</span>"
-                        )
                     with gr.Column(scale=4):
                         # Все output-компоненты получают явные пустые value,
                         # чтобы первый рендер был полностью статическим:
@@ -826,12 +817,43 @@ def build_demo() -> gr.Blocks:
                     outputs=audio_outputs,
                 )
 
+                # Сброс голосового ввода: возвращаем gr.update(value=None) для
+                # самого Audio-компонента (а не голый None), чтобы Gradio 6
+                # действительно «отмонтировал» внутренний рекордер микрофона
+                # и пересоздал виджет с нуля — иначе после первой записи
+                # MediaRecorder остаётся в state «stopped», новые клики по
+                # кнопке записи не поднимают новый поток с микрофона, и
+                # повторное «Распознать» отправляет на сервер старый файл.
+                # Также явно гасим audio_input.value через .clear() chain:
+                # сначала clear() самого компонента (внутренний reset
+                # фронта), затем наш колбэк, который чистит выводы.
+                def _clear_voice_outputs():
+                    return (gr.update(value=None), "") + _empty_result_tuple()
+
                 audio_clear_btn.click(
-                    lambda: (None, "") + _empty_result_tuple(),
+                    _clear_voice_outputs,
                     inputs=None,
                     outputs=[audio_input] + audio_outputs,
                     queue=False,
                 )
+
+        # Пояснение к Intent mode и парсеру диалога — отображается под
+        # рабочими вкладками, непосредственно над статус-баннером
+        # «Intent mode / Суммаризация». Так пользователь сначала видит
+        # сам инструмент, а затем — справку о том, как формируется
+        # ответ и как устроен парсер диалога DialogSum-RU.
+        gr.HTML(
+            "<div class='small-note'>"
+            "Поле <b>Intent mode</b> ниже показывает, какой модуль "
+            "обработал реплику: <code>single_task_rubert_model</code> "
+            "(обученные артефакты проекта) или "
+            "<code>rule_based_fallback</code>. Парсер диалога понимает "
+            "теги <code>#Person1#:</code> / <code>#Person2#:</code>, "
+            "а также <code>Говорящий 1:</code>, <code>Спикер 2:</code>. "
+            "Если тегов нет — режим «По репликам» режет ввод по "
+            "непустым строкам."
+            "</div>"
+        )
 
         # Статус-баннер уже содержит HTML-разметку (<div>, <code>, <b>),
         # поэтому отдаём его как gr.HTML, а не gr.Markdown. Это убирает
@@ -853,9 +875,21 @@ demo = build_demo()
 
 
 if __name__ == "__main__":
+    # Очередь нужна для тяжёлых колбэков (analyze/transcribe), но не
+    # должна влиять на первый рендер: clear-колбэки уже идут с
+    # queue=False, а статические компоненты получают value на момент
+    # build_demo() и не ждут WebSocket-апдейтов.
     demo.queue()
     launch_kwargs: Dict[str, Any] = dict(
-        server_name="0.0.0.0", server_port=7860, share=False
+        server_name="0.0.0.0",
+        server_port=7860,
+        share=False,
+        # Отключаем аналитический бекенд Gradio и /docs / /openapi роуты:
+        # они тянут дополнительные fetch-запросы на старте и иногда
+        # подвешивают первую загрузку страницы за корпоративным прокси
+        # или nginx без проксирования всех путей.
+        analytics_enabled=False,
+        show_api=False,
     )
     if _gradio_major_version() >= 6:
         launch_kwargs["theme"] = gr.themes.Soft()
