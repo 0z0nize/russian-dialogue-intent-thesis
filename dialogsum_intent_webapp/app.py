@@ -302,26 +302,6 @@ TEST_THEMES_HTML = """
       <li>музыкальные события</li>
       <li>развлечения</li>
     </ul>
-    <div class="itmo-hints-v2__examples">
-      <b>Готовые примеры:</b>
-      <ul>
-        <li>«Здравствуйте, я хочу забронировать билет на концерт в Москве.»</li>
-        <li>«Подскажите, как записаться на собеседование по вакансии аналитика.»</li>
-        <li>«У меня жалоба: посылка пришла повреждённой, верните деньги.»</li>
-        <li>«Не могу найти книгу автора Достоевского, помогите подобрать издание.»</li>
-        <li>«Нужно вызвать мастера — стиральная машина не работает.»</li>
-      </ul>
-      <div class="itmo-hints-v2__dialog-wrap">
-        <b>Пример диалога (для режима «По репликам»):</b>
-        <pre class="itmo-hints-v2__dialog">#Person1#: Здравствуйте, я купил билет на поезд, но он не появился в приложении.
-#Person2#: Добрый день. Подскажите номер заказа.
-#Person1#: Номер заказа 45821. Отправьте билет ещё раз на почту, пожалуйста.
-#Person2#: Хорошо, сейчас отправлю билет повторно.
-#Person1#: А с какого вокзала отправляется поезд?
-#Person2#: Поезд отправляется с Московского вокзала в 19:40.
-#Person1#: Спасибо, теперь всё понятно. До свидания.</pre>
-      </div>
-    </div>
   </div>
 </div>
 """
@@ -444,18 +424,18 @@ body.dark .gradio-container .itmo-header-v2,
     --itmo-header-link-hover: #b9ccff;
 }
 
-/* ===== ITMO hints v2 — статический блок, без <details> =====
-   У подсказок есть собственный светлый фон (#f4f7fb), поэтому тёмный текст
-   на нём остаётся читаемым в любой теме. Используем переменную, чтобы
-   сохранить контракт «фон светлый → текст тёмный», но не использовать
-   !important. */
+/* ===== ITMO hints v2 — обычный текст, без карточки/фона =====
+   Блок тем оформлен как часть страницы: без собственного фона, рамки и
+   тени. Цвет текста — адаптивный через CSS-переменную, чтобы оставаться
+   читаемым в светлой и тёмной теме. */
 .gradio-container .itmo-hints-v2 {
     --itmo-hints-fg: #1a1a1a;
     --itmo-hints-accent: #0f4ea8;
-    background: #f4f7fb;
-    border: 1px solid #d6e1ef;
-    border-radius: 8px;
-    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
     margin: 6px 0 4px 0;
     font-size: 0.9rem;
     color: var(--itmo-hints-fg);
@@ -478,29 +458,29 @@ body.dark .gradio-container .itmo-header-v2,
     padding: 0;
 }
 .gradio-container .itmo-hints-v2__themes li {margin: 1px 0;}
-.gradio-container .itmo-hints-v2__examples {margin-top: 6px;}
-.gradio-container .itmo-hints-v2__examples b {color: var(--itmo-hints-accent);}
-.gradio-container .itmo-hints-v2__examples ul {margin: 4px 0 0 18px; padding: 0;}
-.gradio-container .itmo-hints-v2__dialog-wrap {margin-top: 8px;}
-.gradio-container .itmo-hints-v2__dialog {
-    background: #ffffff;
-    border: 1px solid #d6e1ef;
-    border-radius: 6px;
-    padding: 8px 10px;
-    margin: 4px 0 0 0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.82rem;
-    color: var(--itmo-hints-fg);
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    max-width: 100%;
-    overflow-x: auto;
+
+/* ===== Compact voice-hint block (used in tab «Голос») =====
+   Сохраняем тот же «без карточки» вид. */
+.gradio-container .itmo-hints-v2--compact {
+    padding: 0;
 }
 
-/* ===== Compact voice-hint block (used in tab «Голос») ===== */
-.gradio-container .itmo-hints-v2--compact {
-    padding: 8px 12px;
+/* В тёмной теме сохраняем тот же фон-прозрачный вид и подстраиваем
+   только цвет текста и акцента, чтобы он оставался читаемым. */
+@media (prefers-color-scheme: dark) {
+    .gradio-container .itmo-hints-v2 {
+        --itmo-hints-fg: #f1f3f5;
+        --itmo-hints-accent: #8ab4ff;
+    }
+}
+.dark .gradio-container .itmo-hints-v2,
+.gradio-container.dark .itmo-hints-v2,
+.dark.gradio-container .itmo-hints-v2,
+.darkmode .gradio-container .itmo-hints-v2,
+body.dark .gradio-container .itmo-hints-v2,
+[data-theme="dark"] .gradio-container .itmo-hints-v2 {
+    --itmo-hints-fg: #f1f3f5;
+    --itmo-hints-accent: #8ab4ff;
 }
 
 /* ===== Мобильный layout =====
@@ -581,12 +561,12 @@ def build_demo() -> gr.Blocks:
                             text_btn = gr.Button("Анализировать как один текст", variant="primary")
                             text_utt_btn = gr.Button("Анализировать по репликам", variant="primary")
                             text_clear_btn = gr.Button("Очистить", variant="secondary")
-                        gr.HTML(TEST_THEMES_HTML)
                         gr.Examples(
                             examples=TEXT_EXAMPLES,
                             inputs=[text_input],
                             label="Готовые примеры (нажмите, чтобы подставить в поле)",
                         )
+                        gr.HTML(TEST_THEMES_HTML)
                         gr.Markdown(
                             "<span class='small-note'>Поле <b>Intent mode</b> ниже показывает, "
                             "какой модуль обработал реплику: <code>single_task_rubert_model</code> "
