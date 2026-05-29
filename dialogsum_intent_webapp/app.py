@@ -690,89 +690,129 @@ body.dark .gradio-container .itmo-hints-v2,
     }
 }
 
-/* ===== Single-column рабочая область =====
-   Структурное исправление мобильного layout: рабочие вкладки «Текст» и
-   «Голос» больше НЕ используют gr.Row(input_column, output_column).
-   Вместо этого в Python весь контент находится внутри одного gr.Column
-   с elem_classes=["single-column-workspace"]. Это устраняет корень
-   проблемы — Gradio Row, который на некоторых телефонах после первого
-   результата пересчитывал layout и переключался на grid с inline
-   grid-template-columns: <scale1>fr <scale2>fr, перебивая наши
-   медиа-правила.
+/* ===== Адаптивная двухколоночная рабочая область =====
+   Структура: gr.Row(.workspace-row) c двумя gr.Column —
+   .workspace-col-input (слева: ввод, аудио, action-кнопки, примеры,
+   подсказки) и .workspace-col-output (справа: интент/тема/JSON/
+   таблица анализа по репликам).
 
-   Этот блок CSS гарантирует, что:
-   - сам gr.Column .single-column-workspace всегда полная ширина,
-   - все его прямые потомки (input, audio, кнопки, outputs, JSON) тоже
-     100% ширины и не делят строку,
-   - длинный JSON/top words/summary переносятся или скроллятся внутри
-     своего компонента, не расширяя страницу. */
-.gradio-container .single-column-workspace {
+   Desktop (по умолчанию, для всего шире mobile breakpoint и при
+   pointer:fine) — две колонки рядом, как было раньше.
+   Mobile/планшет (max-width:1024px) или сенсорное устройство
+   (pointer:coarse) — складываем в одну колонку с порядком
+   input → output. Из-за того, что .workspace-col-input идёт в DOM
+   первой, естественный порядок при flex-direction:column сохраняет
+   ожидаемую логику: ввод/кнопки → результат.
+
+   Используем стабильные elem_classes вместо svelte-хэшей и
+   переопределяем grid/flex одновременно, потому что Gradio 6 на разных
+   билдах рендерит Row то через display:grid (inline
+   grid-template-columns: <scale>fr ...), то через display:flex. */
+.gradio-container .workspace-row {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    gap: 16px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    /* Перебиваем inline grid-template-columns, который Gradio 6
+       проставляет на Row после первого результата. */
+    grid-template-columns: 1fr 1fr !important;
+    grid-auto-flow: column !important;
+}
+.gradio-container .workspace-row > .workspace-col {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    width: auto !important;
+    box-sizing: border-box !important;
     display: flex !important;
     flex-direction: column !important;
-    flex-wrap: nowrap !important;
-    grid-template-columns: 1fr !important;
-    grid-auto-flow: row !important;
     gap: 8px !important;
+}
+.gradio-container .workspace-col > * {
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
     box-sizing: border-box !important;
 }
-.gradio-container .single-column-workspace > * {
+/* Action-кнопки (Анализировать / Очистить / Распознать / примеры) идут
+   как прямые children колонки и занимают её полную ширину — так удобно
+   на desktop и для touch на mobile. Селектор намеренно НЕ касается
+   кнопок внутри Audio/Dataframe/Tabs (см. исключения ниже). */
+.gradio-container .workspace-col > button,
+.gradio-container .workspace-col > .gr-button {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* Mobile / планшеты / сенсорные устройства: одна колонка.
+   Двойной триггер (max-width + pointer:coarse) ловит и узкие окна на
+   desktop, и большие телефоны/планшеты с touch, где Gradio Row иначе
+   рендерит две узкие колонки. */
+@media (max-width: 1024px), (pointer: coarse) {
+    .gradio-container .workspace-row {
+        flex-direction: column !important;
+        flex-wrap: nowrap !important;
+        grid-template-columns: 1fr !important;
+        grid-auto-flow: row !important;
+        gap: 12px !important;
+    }
+    .gradio-container .workspace-row > .workspace-col {
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        grid-column: 1 / -1 !important;
+    }
+}
+
+/* ===== Таблица «Анализ по репликам» =====
+   На desktop Dataframe должен быть достаточно широким, чтобы помещались
+   шесть колонок (№ / Говорящий / Реплика / Интент / Уверенность / Top-3)
+   без сжатия до нечитаемой ширины. На mobile разрешаем горизонтальный
+   скролл всей таблицы — лучше прокрутить, чем смотреть на 20-пиксельные
+   колонки. min-width на самой <table> заставляет колонки сохранять
+   читаемую ширину; родитель .utterance-table получает overflow-x:auto
+   и тем самым становится горизонтальным скролл-контейнером. */
+.gradio-container .utterance-table {
+    overflow-x: auto !important;
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
-    flex: 0 0 auto !important;
-    grid-column: 1 / -1 !important;
     box-sizing: border-box !important;
 }
-/* Любые случайно оставшиеся вложенные Row внутри рабочей области
-   (например, внутренний Row у gr.Audio или gr.Dataframe тулбара) —
-   тоже схлопываем в колонку, чтобы не получить «два узких столбца». */
-.gradio-container .single-column-workspace .gr-row,
-.gradio-container .single-column-workspace [class*="row"]:not([class*="row-"]),
-.gradio-container .single-column-workspace .form,
-.gradio-container .single-column-workspace .gr-form {
-    display: flex !important;
-    flex-direction: column !important;
-    flex-wrap: nowrap !important;
-    grid-template-columns: 1fr !important;
-    gap: 8px !important;
+.gradio-container .utterance-table table {
+    min-width: 640px !important;
     width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
+    table-layout: auto !important;
 }
-.gradio-container .single-column-workspace .gr-column,
-.gradio-container .single-column-workspace [class*="column"] {
-    flex: 0 0 100% !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
-    grid-column: 1 / -1 !important;
+.gradio-container .utterance-table th,
+.gradio-container .utterance-table td {
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    vertical-align: top !important;
 }
-.gradio-container .single-column-workspace .gr-block,
-.gradio-container .single-column-workspace .block {
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
-}
-/* Action-кнопки (Анализировать как один текст / по репликам / Очистить /
-   Распознать / кнопки-примеры) идут отдельными children и без Row —
-   пусть будут на всю ширину рабочей области, так комфортно и на
-   desktop, и для тапа пальцем на телефоне. */
-.gradio-container .single-column-workspace > button,
-.gradio-container .single-column-workspace > .gr-button {
-    width: 100% !important;
-    max-width: 100% !important;
-}
-/* Не ломаем кнопки внутри самих компонентов Gradio (например, кнопки
-   внутри Audio: запись/стоп/удалить) — у них свои размеры. */
-.gradio-container .single-column-workspace .gr-audio button,
-.gradio-container .single-column-workspace [class*="audio"] button,
-.gradio-container .single-column-workspace [class*="record"] button,
-.gradio-container .single-column-workspace [class*="waveform"] button {
+
+/* ===== Audio playback / record controls =====
+   gr.Audio внутри .workspace-col имеет собственные кнопки управления
+   (запись, стоп, play, pause, скачать, удалить). Они НЕ должны
+   растягиваться на 100% ширины колонки — оставляем им стандартный
+   размер Gradio, чтобы они выглядели как обычные audio-controls, а не
+   как огромные плитки. Селекторы покрывают .voice-audio (наш elem_class)
+   и любые внутренние Gradio-классы audio/waveform/record. */
+.gradio-container .voice-audio button,
+.gradio-container .voice-audio .gr-button,
+.gradio-container .workspace-col [class*="audio"] button,
+.gradio-container .workspace-col [class*="waveform"] button,
+.gradio-container .workspace-col [class*="record"] button,
+.gradio-container .workspace-col [data-testid*="audio"] button {
     width: auto !important;
     max-width: none !important;
+    flex: 0 0 auto !important;
 }
 """
 
@@ -826,97 +866,102 @@ def build_demo() -> gr.Blocks:
         with gr.Tabs():
             # ---------------- Tab 1: Текст ----------------
             with gr.Tab("Текст"):
-                # Структурно одна колонка: больше нет gr.Row(input_column,
-                # output_column). На телефоне предыдущая двухколоночная
-                # Row рендерилась как две очень узкие колонки даже после
-                # CSS-фиксов с display:flex/flex-direction:column —
-                # некоторые сборки Gradio 6 пересчитывают layout после
-                # первого результата и переключают Row в режим grid с
-                # inline grid-template-columns, перебивая наши правила.
-                # Самый надёжный путь — не создавать Row вовсе. Здесь и
-                # на desktop, и на mobile блоки идут сверху вниз: input
-                # → action buttons → примеры/темы → outputs → debug JSON.
-                with gr.Column(elem_classes=["single-column-workspace"]):
-                    text_input = gr.Textbox(
-                        label="Введите реплику или диалог",
-                        placeholder=(
-                            "Одна реплика: «Здравствуйте, я хочу забронировать билет.»\n"
-                            "Или диалог в формате DialogSum-RU:\n"
-                            "#Person1#: Привет, как дела?\n"
-                            "#Person2#: Нормально, готовлюсь к собеседованию."
-                        ),
-                        lines=8,
-                    )
-                    gr.Markdown(
-                        "<span class='small-note'>Текущая модель — single-task RuBERT, "
-                        "обученная на одиночных репликах. Для длинных диалогов "
-                        "DialogSum-RU выбирайте режим <b>«По репликам»</b> — "
-                        "тогда intent предсказывается для каждой реплики отдельно. "
-                        "Режим <b>«Весь текст»</b> возвращает один доминирующий intent.</span>"
-                    )
-                    # Кнопки-действия — каждая в собственной строке-колонке,
-                    # чтобы на узких экранах они не делили ширину между
-                    # собой. На desktop CSS даёт им ширину 100%, что
-                    # выглядит привычно и удобно для touch-устройств.
-                    text_btn = gr.Button("Анализировать как один текст", variant="primary")
-                    text_utt_btn = gr.Button("Анализировать по репликам", variant="primary")
-                    text_clear_btn = gr.Button(
-                        "Очистить",
-                        variant="secondary",
-                        elem_classes=["danger-clear-button"],
-                    )
-                    # Статические кнопки вместо gr.Examples: внутренний
-                    # Dataset-виджет gr.Examples тянет данные через
-                    # /gradio_api/dataset и за nginx-прокси на первом
-                    # рендере зависает в «Загрузка…». Кнопки с
-                    # queue=False подставляют текст без обращения к
-                    # очереди Gradio.
-                    gr.Markdown(
-                        "**Готовые примеры** (нажмите, чтобы подставить в поле)"
-                    )
-                    example_buttons = [
-                        gr.Button(label, variant="secondary", size="sm")
-                        for label in TEXT_EXAMPLE_LABELS
-                    ]
-                    for btn, example in zip(example_buttons, TEXT_EXAMPLES):
-                        example_text = example[0]
-                        btn.click(
-                            lambda txt=example_text: txt,
-                            inputs=None,
-                            outputs=[text_input],
-                            queue=False,
+                # Адаптивная раскладка: на desktop (min-width: 1025px и
+                # некрупный pointer) — две колонки через gr.Row, на
+                # mobile/планшете/coarse-pointer — одна колонка с
+                # порядком input → buttons → примеры/темы → outputs →
+                # debug JSON. Раскладка управляется CSS через стабильные
+                # elem_classes (.workspace-row, .workspace-col-input,
+                # .workspace-col-output); media-queries переводят .workspace-row
+                # из row в column на узких экранах и/или сенсорных устройствах.
+                with gr.Row(elem_classes=["workspace-row"]):
+                    with gr.Column(
+                        elem_classes=["workspace-col", "workspace-col-input"],
+                        scale=1,
+                        min_width=320,
+                    ):
+                        text_input = gr.Textbox(
+                            label="Введите реплику или диалог",
+                            placeholder=(
+                                "Одна реплика: «Здравствуйте, я хочу забронировать билет.»\n"
+                                "Или диалог в формате DialogSum-RU:\n"
+                                "#Person1#: Привет, как дела?\n"
+                                "#Person2#: Нормально, готовлюсь к собеседованию."
+                            ),
+                            lines=8,
                         )
-                    gr.HTML(TEST_THEMES_HTML)
+                        gr.Markdown(
+                            "<span class='small-note'>Текущая модель — single-task RuBERT, "
+                            "обученная на одиночных репликах. Для длинных диалогов "
+                            "DialogSum-RU выбирайте режим <b>«По репликам»</b> — "
+                            "тогда intent предсказывается для каждой реплики отдельно. "
+                            "Режим <b>«Весь текст»</b> возвращает один доминирующий intent.</span>"
+                        )
+                        # Action-кнопки идут отдельными children без вложенного Row.
+                        # CSS делает их 100% ширины колонки — удобно и на desktop,
+                        # и для touch на mobile.
+                        text_btn = gr.Button("Анализировать как один текст", variant="primary")
+                        text_utt_btn = gr.Button("Анализировать по репликам", variant="primary")
+                        text_clear_btn = gr.Button(
+                            "Очистить",
+                            variant="secondary",
+                            elem_classes=["danger-clear-button"],
+                        )
+                        # Статические кнопки вместо gr.Examples: внутренний
+                        # Dataset-виджет gr.Examples тянет данные через
+                        # /gradio_api/dataset и за nginx-прокси на первом
+                        # рендере зависает в «Загрузка…». Кнопки с
+                        # queue=False подставляют текст без обращения к
+                        # очереди Gradio.
+                        gr.Markdown(
+                            "**Готовые примеры** (нажмите, чтобы подставить в поле)"
+                        )
+                        example_buttons = [
+                            gr.Button(label, variant="secondary", size="sm")
+                            for label in TEXT_EXAMPLE_LABELS
+                        ]
+                        for btn, example in zip(example_buttons, TEXT_EXAMPLES):
+                            example_text = example[0]
+                            btn.click(
+                                lambda txt=example_text: txt,
+                                inputs=None,
+                                outputs=[text_input],
+                                queue=False,
+                            )
+                        gr.HTML(TEST_THEMES_HTML)
 
-                    # Все output-компоненты получают явные пустые value,
-                    # чтобы первый рендер был полностью статическим:
-                    # без value Gradio показывает «Загрузка...» до тех
-                    # пор, пока не дойдёт первый websocket-апдейт от
-                    # очереди — а за прокси первый WS-хэндшейк иногда
-                    # подвисает, и компоненты остаются в loading.
-                    t_intent = gr.Textbox(label="Intent (намерение)", value="")
-                    t_intent_conf = gr.Number(label="Intent confidence", precision=3, value=0.0)
-                    t_intent_mode = gr.Textbox(label="Intent mode (источник предсказания)", value="")
-                    # Topic id и Topic name тоже идут друг под другом —
-                    # на телефоне раньше «Topic id + Topic name» в одну
-                    # строку оставались двумя узкими ячейками.
-                    t_topic_id = gr.Number(label="Topic cluster id", precision=0, value=-1)
-                    t_topic_name = gr.Textbox(label="Topic name", value="")
-                    t_topic_desc = gr.Textbox(label="Topic description", lines=2, value="")
-                    t_topic_words = gr.Textbox(label="Top words", value="")
-                    t_summary = gr.Textbox(label="Summary / статус", lines=2, value="")
-                    t_json = gr.JSON(label="Полный JSON-ответ", elem_id="json-out", value=None)
-                    t_utt_table = gr.Dataframe(
-                        headers=UTTERANCE_TABLE_HEADERS,
-                        datatype=["number", "str", "str", "str", "number", "str"],
-                        label="Анализ по репликам (DialogSum-RU)",
-                        wrap=True,
-                        interactive=False,
-                        value=[],
-                    )
-                    t_utt_json = gr.JSON(
-                        label="Реплики (JSON, для отладки)", elem_id="json-out", value=None
-                    )
+                    with gr.Column(
+                        elem_classes=["workspace-col", "workspace-col-output"],
+                        scale=1,
+                        min_width=320,
+                    ):
+                        # Все output-компоненты получают явные пустые value,
+                        # чтобы первый рендер был полностью статическим:
+                        # без value Gradio показывает «Загрузка...» до тех
+                        # пор, пока не дойдёт первый websocket-апдейт от
+                        # очереди — а за прокси первый WS-хэндшейк иногда
+                        # подвисает, и компоненты остаются в loading.
+                        t_intent = gr.Textbox(label="Intent (намерение)", value="")
+                        t_intent_conf = gr.Number(label="Intent confidence", precision=3, value=0.0)
+                        t_intent_mode = gr.Textbox(label="Intent mode (источник предсказания)", value="")
+                        t_topic_id = gr.Number(label="Topic cluster id", precision=0, value=-1)
+                        t_topic_name = gr.Textbox(label="Topic name", value="")
+                        t_topic_desc = gr.Textbox(label="Topic description", lines=2, value="")
+                        t_topic_words = gr.Textbox(label="Top words", value="")
+                        t_summary = gr.Textbox(label="Summary / статус", lines=2, value="")
+                        t_json = gr.JSON(label="Полный JSON-ответ", elem_id="json-out", value=None)
+                        t_utt_table = gr.Dataframe(
+                            headers=UTTERANCE_TABLE_HEADERS,
+                            datatype=["number", "str", "str", "str", "number", "str"],
+                            label="Анализ по репликам (DialogSum-RU)",
+                            wrap=True,
+                            interactive=False,
+                            value=[],
+                            elem_classes=["utterance-table"],
+                        )
+                        t_utt_json = gr.JSON(
+                            label="Реплики (JSON, для отладки)", elem_id="json-out", value=None
+                        )
 
                 text_outputs = [
                     t_intent,
@@ -952,51 +997,62 @@ def build_demo() -> gr.Blocks:
 
             # ---------------- Tab 2: Голос ----------------
             with gr.Tab("Голос"):
-                # Та же логика, что и во вкладке «Текст»: только один
-                # gr.Column, никакого gr.Row(input_column, output_column).
-                # Порядок: audio → action buttons → подсказки/темы →
-                # outputs → debug JSON.
-                with gr.Column(elem_classes=["single-column-workspace"]):
-                    audio_input = gr.Audio(
-                        sources=["microphone", "upload"],
-                        type="filepath",
-                        label="Запишите или загрузите аудио (русский)",
-                    )
-                    audio_btn = gr.Button("Распознать и анализировать", variant="primary")
-                    audio_clear_btn = gr.Button(
-                        "Очистить голосовой ввод",
-                        variant="secondary",
-                        elem_classes=["danger-clear-button"],
-                    )
-                    gr.Markdown(
-                        "<span class='small-note'>STT: faster-whisper. По умолчанию модель "
-                        f"<code>{os.environ.get('WHISPER_MODEL_SIZE', 'medium')}</code>. "
-                        "Микрофон в браузере обычно требует HTTPS — иначе используйте upload.</span>"
-                    )
-                    gr.HTML(
-                        "<div class='itmo-hints-v2 itmo-hints-v2--compact'>"
-                        "<div class='itmo-hints-v2__title'>💡 Темы для тестирования</div>"
-                        "<div class='itmo-hints-v2__body'>"
-                        "Произнесите фразу на одну из тем: "
-                        "собеседование / работа, путешествия / билеты, покупка / заказ, "
-                        "ремонт / обслуживание, жалоба / проблема, образование, "
-                        "дом / бытовые вопросы, поиск книг, музыкальные события, развлечения."
-                        "</div></div>"
-                    )
+                # Та же адаптивная схема, что и во вкладке «Текст»:
+                # gr.Row(workspace-row) со ввод-колонкой слева (audio →
+                # action buttons → подсказки/темы) и output-колонкой справа.
+                # CSS переключает раскладку в одну колонку на mobile/coarse.
+                with gr.Row(elem_classes=["workspace-row"]):
+                    with gr.Column(
+                        elem_classes=["workspace-col", "workspace-col-input"],
+                        scale=1,
+                        min_width=320,
+                    ):
+                        audio_input = gr.Audio(
+                            sources=["microphone", "upload"],
+                            type="filepath",
+                            label="Запишите или загрузите аудио (русский)",
+                            elem_classes=["voice-audio"],
+                        )
+                        audio_btn = gr.Button("Распознать и анализировать", variant="primary")
+                        audio_clear_btn = gr.Button(
+                            "Очистить голосовой ввод",
+                            variant="secondary",
+                            elem_classes=["danger-clear-button"],
+                        )
+                        gr.Markdown(
+                            "<span class='small-note'>STT: faster-whisper. По умолчанию модель "
+                            f"<code>{os.environ.get('WHISPER_MODEL_SIZE', 'medium')}</code>. "
+                            "Микрофон в браузере обычно требует HTTPS — иначе используйте upload.</span>"
+                        )
+                        gr.HTML(
+                            "<div class='itmo-hints-v2 itmo-hints-v2--compact'>"
+                            "<div class='itmo-hints-v2__title'>💡 Темы для тестирования</div>"
+                            "<div class='itmo-hints-v2__body'>"
+                            "Произнесите фразу на одну из тем: "
+                            "собеседование / работа, путешествия / билеты, покупка / заказ, "
+                            "ремонт / обслуживание, жалоба / проблема, образование, "
+                            "дом / бытовые вопросы, поиск книг, музыкальные события, развлечения."
+                            "</div></div>"
+                        )
 
-                    # Те же пустые value, что и во вкладке «Текст»:
-                    # гарантируем статический первый рендер без
-                    # ожидания первого WS-апдейта очереди.
-                    a_text = gr.Textbox(label="Распознанный текст", lines=4, value="")
-                    a_intent = gr.Textbox(label="Intent (намерение)", value="")
-                    a_intent_conf = gr.Number(label="Intent confidence", precision=3, value=0.0)
-                    a_intent_mode = gr.Textbox(label="Intent mode (источник предсказания)", value="")
-                    a_topic_id = gr.Number(label="Topic cluster id", precision=0, value=-1)
-                    a_topic_name = gr.Textbox(label="Topic name", value="")
-                    a_topic_desc = gr.Textbox(label="Topic description", lines=2, value="")
-                    a_topic_words = gr.Textbox(label="Top words", value="")
-                    a_summary = gr.Textbox(label="Summary / статус", lines=2, value="")
-                    a_json = gr.JSON(label="Полный JSON-ответ", elem_id="json-out", value=None)
+                    with gr.Column(
+                        elem_classes=["workspace-col", "workspace-col-output"],
+                        scale=1,
+                        min_width=320,
+                    ):
+                        # Те же пустые value, что и во вкладке «Текст»:
+                        # гарантируем статический первый рендер без
+                        # ожидания первого WS-апдейта очереди.
+                        a_text = gr.Textbox(label="Распознанный текст", lines=4, value="")
+                        a_intent = gr.Textbox(label="Intent (намерение)", value="")
+                        a_intent_conf = gr.Number(label="Intent confidence", precision=3, value=0.0)
+                        a_intent_mode = gr.Textbox(label="Intent mode (источник предсказания)", value="")
+                        a_topic_id = gr.Number(label="Topic cluster id", precision=0, value=-1)
+                        a_topic_name = gr.Textbox(label="Topic name", value="")
+                        a_topic_desc = gr.Textbox(label="Topic description", lines=2, value="")
+                        a_topic_words = gr.Textbox(label="Top words", value="")
+                        a_summary = gr.Textbox(label="Summary / статус", lines=2, value="")
+                        a_json = gr.JSON(label="Полный JSON-ответ", elem_id="json-out", value=None)
 
                 audio_outputs = [
                     a_text,
