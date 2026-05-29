@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo_plate_russian_white.png" alt="ITMO" width="320">
+  <img src="docs/assets/logo_plate_russian_white_on_black.png" alt="ITMO" width="320">
 </p>
 
 # Семантический анализ русскоязычных диалогов для распознавания намерений
@@ -361,5 +361,5 @@ Notebooks 00–09 реализуют основной экспериментал
 ---
 
 <p align="center">
-  <img src="docs/assets/slogan_white_plate.png" alt="ITMOre than a UNIVERSITY" width="420">
+  <img src="docs/assets/slogan_white_plate_on_black.png" alt="ITMOre than a UNIVERSITY" width="420">
 </p>
