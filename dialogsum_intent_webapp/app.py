@@ -814,6 +814,95 @@ body.dark .gradio-container .itmo-hints-v2,
     max-width: none !important;
     flex: 0 0 auto !important;
 }
+
+/* ===== Компактные иконки внутри audio-плеера =====
+   Внутренний плеер Gradio (.voice-audio) рендерит ряд icon-button'ов:
+   динамик/громкость, play/pause, перемотка вперёд/назад, скачать, удалить.
+   В Gradio 6 у части из них (особенно у speaker и play) применяется
+   глобальный стиль кнопок, и они вырастают до огромного размера, тогда
+   как кнопки перемотки остаются стандартного компактного размера.
+   Ниже жёстко нормализуем габариты ВСЕХ icon-кнопок внутри .voice-audio,
+   чтобы они визуально были одного размера, а SVG-иконки внутри них —
+   одного размера друг с другом. Селекторы намеренно ограничены
+   .voice-audio и его внутренними wrapper'ами, чтобы не задеть остальные
+   кнопки приложения. */
+.gradio-container .voice-audio button,
+.gradio-container .voice-audio .gr-button,
+.gradio-container .voice-audio [role="button"],
+.gradio-container .voice-audio [class*="icon-button"],
+.gradio-container .voice-audio [class*="controls"] button,
+.gradio-container .voice-audio [class*="player"] button,
+.gradio-container .voice-audio [class*="waveform"] button {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 0 !important;
+    max-height: 32px !important;
+    padding: 4px !important;
+    box-sizing: border-box !important;
+    flex: 0 0 auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: 1 !important;
+    border-radius: 6px !important;
+}
+.gradio-container .voice-audio button svg,
+.gradio-container .voice-audio .gr-button svg,
+.gradio-container .voice-audio [role="button"] svg,
+.gradio-container .voice-audio [class*="icon-button"] svg,
+.gradio-container .voice-audio [class*="controls"] svg,
+.gradio-container .voice-audio [class*="player"] svg,
+.gradio-container .voice-audio [class*="waveform"] svg {
+    width: 18px !important;
+    height: 18px !important;
+    max-width: 18px !important;
+    max-height: 18px !important;
+    display: block !important;
+}
+/* Иконка-img (Gradio иногда использует <img> вместо <svg>). */
+.gradio-container .voice-audio button img,
+.gradio-container .voice-audio [role="button"] img {
+    width: 18px !important;
+    height: 18px !important;
+    max-width: 18px !important;
+    max-height: 18px !important;
+}
+/* Контейнер controls — flex-row с компактным gap, без растягивания
+   отдельных кнопок на всю ширину. */
+.gradio-container .voice-audio [class*="controls"],
+.gradio-container .voice-audio [class*="player"] {
+    gap: 6px !important;
+    align-items: center !important;
+}
+/* На узких экранах (mobile/coarse) оставляем те же компактные размеры —
+   увеличение под touch здесь не нужно, иначе кнопки опять станут гигантскими. */
+@media (max-width: 1024px), (pointer: coarse) {
+    .gradio-container .voice-audio button,
+    .gradio-container .voice-audio .gr-button,
+    .gradio-container .voice-audio [role="button"],
+    .gradio-container .voice-audio [class*="icon-button"],
+    .gradio-container .voice-audio [class*="controls"] button,
+    .gradio-container .voice-audio [class*="player"] button,
+    .gradio-container .voice-audio [class*="waveform"] button {
+        width: 34px !important;
+        height: 34px !important;
+        min-width: 34px !important;
+        max-height: 34px !important;
+        padding: 5px !important;
+    }
+    .gradio-container .voice-audio button svg,
+    .gradio-container .voice-audio [role="button"] svg,
+    .gradio-container .voice-audio [class*="icon-button"] svg,
+    .gradio-container .voice-audio [class*="controls"] svg,
+    .gradio-container .voice-audio [class*="player"] svg,
+    .gradio-container .voice-audio [class*="waveform"] svg {
+        width: 20px !important;
+        height: 20px !important;
+        max-width: 20px !important;
+        max-height: 20px !important;
+    }
+}
 """
 
 DIALOG_EXAMPLE_TRAIN_TICKET = (
