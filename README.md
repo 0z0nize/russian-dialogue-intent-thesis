@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo_plate_russian_white.png" alt="ITMO" width="320">
+</p>
+
 # Семантический анализ русскоязычных диалогов для распознавания намерений
 
 Репозиторий с кодом и материалами магистерской ВКР:
@@ -353,3 +357,9 @@ Notebooks 00–09 реализуют основной экспериментал
 ## Лицензия и атрибуция
 
 Исходный датасет `DialogSum-RU` распространяется автором `d0rj` на Hugging Face; права на исходные тексты принадлежат авторам DialogSum. Опубликованная модель `ozonize/dialogsum-ru-intent-rubert` - производный артефакт обучения на DialogSum-RU. Код в этом репозитории подготовлен в рамках ВКР НИУ ИТМО.
+
+---
+
+<p align="center">
+  <img src="docs/assets/slogan_white_plate.png" alt="ITMOre than a UNIVERSITY" width="420">
+</p>
