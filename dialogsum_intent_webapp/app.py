@@ -627,13 +627,22 @@ body.dark .gradio-container .itmo-hints-v2,
 
 # Клиентский хук на кнопку записи в Gradio Audio. Подключается через
 # Blocks.launch(head=...) — gr.HTML в Gradio 6 санитизирует <script>,
-# поэтому встроить скрипт прямо в компонент нельзя. Цель: при клике
-# по «record-button» внутри .voice-audio самим вызвать
+# поэтому встроить скрипт прямо в компонент нельзя. Цель: при ПЕРВОМ
+# клике по «record-button» внутри .voice-audio самим вызвать
 # navigator.mediaDevices.getUserMedia и при ошибке (нет HTTPS, нет
 # разрешения, нет устройства) показать видимый баннер #voice-mic-warning.
 # Без этого хука Gradio Audio при отказе getUserMedia пишет ошибку
 # только в console и не даёт пользователю никакой обратной связи —
 # кнопка «не реагирует» с точки зрения пользователя.
+#
+# ВАЖНО: хук одноразовый на каждую DOM-кнопку. После первой проверки
+# слушатель снимается, иначе повторные клики (например, стоп-запись
+# и второй цикл «Запись → Очистить → Запись») будут параллельно с
+# wavesurfer.RecordPlugin захватывать MediaStreamTrack: наш .stop()
+# глушит дорожку, которой уже владеет рекордер, и повторная запись
+# перестаёт работать. MutationObserver перепривязывает хук, когда
+# Gradio remount'ит компонент после очистки — поэтому первый клик
+# каждой свежесозданной кнопки снова получает диагностику.
 VOICE_MIC_HEAD_JS = """
 <script>
 (function () {
@@ -652,42 +661,67 @@ VOICE_MIC_HEAD_JS = """
     if (box) box.style.display = "none";
   }
 
+  // Одноразовая диагностика getUserMedia. Срабатывает только на ПЕРВОМ
+  // клике по кнопке записи и сразу же снимает свой слушатель — иначе
+  // повторные клики (старт второй записи после «Очистить», а также
+  // клик «Стоп» в Gradio 6 диспетчеризуется тоже к record-button)
+  // будут каждый раз дёргать getUserMedia параллельно с wavesurfer,
+  // что в Chrome приводит к гонке за один и тот же MediaStreamTrack:
+  // наш .stop() глушит дорожку, которой уже владеет RecordPlugin,
+  // и повторная запись «работает только один раз». После первого
+  // успешного клика хук больше не вмешивается в работу рекордера.
+  function probeOnce(ev) {
+    var btn = ev.currentTarget;
+    btn.removeEventListener("click", probeOnce, true);
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showWarn("браузер не поддерживает запись или страница не HTTPS");
+      return;
+    }
+    // Параллельно с wavesurfer.startMic() делаем свой запрос на
+    // микрофон — только чтобы поймать NotAllowedError/NotFoundError
+    // и показать пользователю русский баннер. На успехе сразу
+    // отпускаем дорожки; wavesurfer работает со своим собственным
+    // потоком, поэтому наш .stop() не трогает его MediaRecorder.
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(
+      function (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        hideWarn();
+      },
+      function (err) {
+        var name = (err && err.name) || "";
+        var msg;
+        if (name === "NotAllowedError" || name === "SecurityError") {
+          msg = "доступ к микрофону запрещён";
+        } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+          msg = "микрофон не найден на устройстве";
+        } else if (name === "NotReadableError") {
+          msg = "микрофон занят другим приложением";
+        } else {
+          msg = name || (err && err.message) || "неизвестная ошибка";
+        }
+        showWarn(msg);
+      }
+    );
+  }
+
   function bindRecordButtons(root) {
     var btns = root.querySelectorAll(".voice-audio .record-button");
     btns.forEach(function (btn) {
       if (btn.__voiceMicHooked) return;
       btn.__voiceMicHooked = true;
-      btn.addEventListener("click", function () {
-        hideWarn();
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          showWarn("браузер не поддерживает запись или страница не HTTPS");
-          return;
-        }
-        navigator.mediaDevices.getUserMedia({ audio: true }).then(
-          function (stream) {
-            stream.getTracks().forEach(function (t) { t.stop(); });
-          },
-          function (err) {
-            var name = (err && err.name) || "";
-            var msg;
-            if (name === "NotAllowedError" || name === "SecurityError") {
-              msg = "доступ к микрофону запрещён";
-            } else if (name === "NotFoundError" || name === "OverconstrainedError") {
-              msg = "микрофон не найден на устройстве";
-            } else if (name === "NotReadableError") {
-              msg = "микрофон занят другим приложением";
-            } else {
-              msg = name || (err && err.message) || "неизвестная ошибка";
-            }
-            showWarn(msg);
-          }
-        );
-      }, true);
+      // capture=true, чтобы успеть до svelte-обработчика; passive
+      // не ставим, потому что обработчик асинхронный, но клик мы
+      // НЕ preventDefault'им — wavesurfer всё равно стартует запись.
+      btn.addEventListener("click", probeOnce, true);
     });
   }
 
   function start() {
     bindRecordButtons(document);
+    // MutationObserver нужен, потому что после «Очистить» Gradio
+    // remount'ит Audio-компонент и DOM-кнопка пересоздаётся —
+    // на новой кнопке флага __voiceMicHooked нет, и одноразовая
+    // диагностика снова доступна для первого клика повторной записи.
     var obs = new MutationObserver(function () { bindRecordButtons(document); });
     obs.observe(document.body, { childList: true, subtree: true });
   }
