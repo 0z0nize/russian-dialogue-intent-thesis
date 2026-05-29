@@ -176,11 +176,11 @@ python app.py
 формате Gradio (`POST → event_id → GET → результат`).
 
 - Документация эндпоинтов, примеры curl/`gradio_client` и список классов
-  интента — [`docs/api.md`](docs/api.md).
+  интента - [`docs/api.md`](docs/api.md).
 - Готовая Postman-коллекция со всеми запросами и автозаполнением
-  `event_id` — [`docs/postman/intent_demo_postman_collection.json`](docs/postman/intent_demo_postman_collection.json).
-- Base URL продового демо — `https://intent-demo.online`,
-  префикс API — `/gradio_api`.
+  `event_id` - [`docs/postman/intent_demo_postman_collection.json`](docs/postman/intent_demo_postman_collection.json).
+- Base URL продового демо - `https://intent-demo.online`,
+  префикс API - `/gradio_api`.
 
 ## Содержание ВКР
 
