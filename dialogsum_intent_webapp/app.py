@@ -790,10 +790,20 @@ def build_demo() -> gr.Blocks:
             with gr.Tab("Голос"):
                 with gr.Row():
                     with gr.Column(scale=3):
+                        # Явно фиксируем interactive=True и editable=False:
+                        # в Gradio 6 (Svelte 5 rewrite Audio-компонента) overlay
+                        # для редактирования/обрезки иногда перехватывает клики
+                        # по кнопке записи, и пользователь не может стартовать
+                        # запись с микрофона. Нам редактирование аудио не нужно
+                        # (мы только распознаём речь), поэтому отключаем его —
+                        # это убирает лишний UI поверх рекордера и стабилизирует
+                        # клик по «Запись».
                         audio_input = gr.Audio(
                             sources=["microphone", "upload"],
                             type="filepath",
                             label="Запишите или загрузите аудио (русский)",
+                            interactive=True,
+                            editable=False,
                         )
                         with gr.Row():
                             audio_btn = gr.Button("Распознать и анализировать", variant="primary")
@@ -852,18 +862,16 @@ def build_demo() -> gr.Blocks:
                     outputs=audio_outputs,
                 )
 
-                # Сброс голосового ввода: возвращаем gr.update(value=None) для
-                # самого Audio-компонента (а не голый None), чтобы Gradio 6
-                # действительно «отмонтировал» внутренний рекордер микрофона
-                # и пересоздал виджет с нуля — иначе после первой записи
-                # MediaRecorder остаётся в state «stopped», новые клики по
-                # кнопке записи не поднимают новый поток с микрофона, и
-                # повторное «Распознать» отправляет на сервер старый файл.
-                # Также явно гасим audio_input.value через .clear() chain:
-                # сначала clear() самого компонента (внутренний reset
-                # фронта), затем наш колбэк, который чистит выводы.
+                # Сброс голосового ввода: возвращаем None для audio_input
+                # (а не gr.update(value=None)). В Gradio 6 после rewrite
+                # Audio на Svelte 5 update-payload иногда оставляет старый
+                # MediaRecorder в подвешенном состоянии и блокирует клик
+                # по кнопке записи. Чистый None Gradio интерпретирует как
+                # «сбросить значение в default» и переинициализирует
+                # внутренний рекордер — это самый надёжный способ сделать
+                # повторную запись после «Очистить».
                 def _clear_voice_outputs():
-                    return (gr.update(value=None), "") + _empty_result_tuple()
+                    return (None, "") + _empty_result_tuple()
 
                 audio_clear_btn.click(
                     _clear_voice_outputs,
