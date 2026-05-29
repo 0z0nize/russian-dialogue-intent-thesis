@@ -625,6 +625,82 @@ body.dark .gradio-container .itmo-hints-v2,
 }
 """
 
+# Клиентский хук на кнопку записи в Gradio Audio. Подключается через
+# Blocks.launch(head=...) — gr.HTML в Gradio 6 санитизирует <script>,
+# поэтому встроить скрипт прямо в компонент нельзя. Цель: при клике
+# по «record-button» внутри .voice-audio самим вызвать
+# navigator.mediaDevices.getUserMedia и при ошибке (нет HTTPS, нет
+# разрешения, нет устройства) показать видимый баннер #voice-mic-warning.
+# Без этого хука Gradio Audio при отказе getUserMedia пишет ошибку
+# только в console и не даёт пользователю никакой обратной связи —
+# кнопка «не реагирует» с точки зрения пользователя.
+VOICE_MIC_HEAD_JS = """
+<script>
+(function () {
+  if (window.__voiceMicHookInstalled) return;
+  window.__voiceMicHookInstalled = true;
+
+  function showWarn(msg) {
+    var box = document.getElementById("voice-mic-warning");
+    if (!box) return;
+    var detail = box.querySelector(".voice-mic-warning__detail");
+    if (detail) detail.textContent = msg ? " (" + msg + ")" : "";
+    box.style.display = "block";
+  }
+  function hideWarn() {
+    var box = document.getElementById("voice-mic-warning");
+    if (box) box.style.display = "none";
+  }
+
+  function bindRecordButtons(root) {
+    var btns = root.querySelectorAll(".voice-audio .record-button");
+    btns.forEach(function (btn) {
+      if (btn.__voiceMicHooked) return;
+      btn.__voiceMicHooked = true;
+      btn.addEventListener("click", function () {
+        hideWarn();
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          showWarn("браузер не поддерживает запись или страница не HTTPS");
+          return;
+        }
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(
+          function (stream) {
+            stream.getTracks().forEach(function (t) { t.stop(); });
+          },
+          function (err) {
+            var name = (err && err.name) || "";
+            var msg;
+            if (name === "NotAllowedError" || name === "SecurityError") {
+              msg = "доступ к микрофону запрещён";
+            } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+              msg = "микрофон не найден на устройстве";
+            } else if (name === "NotReadableError") {
+              msg = "микрофон занят другим приложением";
+            } else {
+              msg = name || (err && err.message) || "неизвестная ошибка";
+            }
+            showWarn(msg);
+          }
+        );
+      }, true);
+    });
+  }
+
+  function start() {
+    bindRecordButtons(document);
+    var obs = new MutationObserver(function () { bindRecordButtons(document); });
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
+})();
+</script>
+"""
+
+
 DIALOG_EXAMPLE_TRAIN_TICKET = (
     "#Person1#: Здравствуйте, я купил билет на поезд, но он не появился в приложении.\n"
     "#Person2#: Добрый день. Подскажите номер заказа.\n"
@@ -790,20 +866,51 @@ def build_demo() -> gr.Blocks:
             with gr.Tab("Голос"):
                 with gr.Row():
                     with gr.Column(scale=3):
-                        # Явно фиксируем interactive=True и editable=False:
-                        # в Gradio 6 (Svelte 5 rewrite Audio-компонента) overlay
-                        # для редактирования/обрезки иногда перехватывает клики
-                        # по кнопке записи, и пользователь не может стартовать
-                        # запись с микрофона. Нам редактирование аудио не нужно
-                        # (мы только распознаём речь), поэтому отключаем его —
-                        # это убирает лишний UI поверх рекордера и стабилизирует
-                        # клик по «Запись».
+                        # editable=False: в Gradio 6 (Svelte 5 rewrite Audio)
+                        # overlay для редактирования/обрезки иногда перехватывает
+                        # клики, а нам редактирование не нужно.
+                        # elem_classes=["voice-audio"]: используется ниже для
+                        # скоупа клиентского JS, который перехватывает ошибки
+                        # getUserMedia (отказ в доступе к микрофону, отсутствие
+                        # устройства, не-HTTPS контекст). Без этого хука клик
+                        # по кнопке «Запись» в WaveformRecordControls просто
+                        # вызывает wavesurfer RecordPlugin.startRecording(),
+                        # который при ошибке getUserMedia пишет stack trace
+                        # в console и НЕ показывает пользователю никакого
+                        # фидбэка — кнопка остаётся в состоянии «Запись»,
+                        # и пользователь думает, что она «не реагирует».
                         audio_input = gr.Audio(
                             sources=["microphone", "upload"],
                             type="filepath",
                             label="Запишите или загрузите аудио (русский)",
                             interactive=True,
                             editable=False,
+                            elem_classes=["voice-audio"],
+                        )
+                        # Видимый баннер для ошибок доступа к микрофону +
+                        # JS-хук, который перехватывает клик по кнопке записи
+                        # внутри .voice-audio и сам вызывает getUserMedia,
+                        # чтобы поймать ошибку до того, как её проглотит
+                        # wavesurfer. При успехе сразу освобождаем поток —
+                        # пользовательский поток дальше создаёт сам wavesurfer
+                        # внутри record.startRecording(). При ошибке —
+                        # показываем понятное сообщение по-русски и подсказку
+                        # переключиться на загрузку файла.
+                        # Только разметка баннера — сам <script> подключается
+                        # через launch(head=...), потому что gr.HTML в Gradio 6
+                        # санитизирует <script> и его код не выполняется.
+                        gr.HTML(
+                            "<div id=\"voice-mic-warning\" "
+                            "style=\"display:none;margin:8px 0;padding:10px 12px;"
+                            "border-radius:6px;background:#fef2f2;color:#991b1b;"
+                            "border:1px solid #fecaca;font-size:0.9em;line-height:1.4;\">"
+                            "<b>Не удалось получить доступ к микрофону.</b>"
+                            "<span class=\"voice-mic-warning__detail\"></span><br>"
+                            "Проверьте, что страница открыта по HTTPS и что вы "
+                            "разрешили доступ к микрофону в браузере. Если микрофон "
+                            "недоступен — переключитесь на вкладку <b>«Upload»</b> "
+                            "внутри блока выше и загрузите аудиофайл (wav / mp3 / ogg)."
+                            "</div>"
                         )
                         with gr.Row():
                             audio_btn = gr.Button("Распознать и анализировать", variant="primary")
@@ -815,7 +922,8 @@ def build_demo() -> gr.Blocks:
                         gr.Markdown(
                             "<span class='small-note'>STT: faster-whisper. По умолчанию модель "
                             f"<code>{os.environ.get('WHISPER_MODEL_SIZE', 'medium')}</code>. "
-                            "Микрофон в браузере обычно требует HTTPS — иначе используйте upload.</span>"
+                            "Микрофон в браузере требует HTTPS и разрешения на доступ — "
+                            "иначе используйте вкладку <b>Upload</b> внутри блока выше.</span>"
                         )
                         gr.HTML(
                             "<div class='itmo-hints-v2 itmo-hints-v2--compact'>"
@@ -958,4 +1066,8 @@ if __name__ == "__main__":
     if _gradio_major_version() >= 6:
         launch_kwargs["theme"] = gr.themes.Soft()
         launch_kwargs["css"] = CSS
+        # head=<script> подключает клиентский хук на кнопку записи Audio —
+        # см. VOICE_MIC_HEAD_JS. _filter_launch_kwargs ниже отбросит head,
+        # если установленная версия Gradio его не поддерживает.
+        launch_kwargs["head"] = VOICE_MIC_HEAD_JS
     demo.launch(**_filter_launch_kwargs(launch_kwargs))
