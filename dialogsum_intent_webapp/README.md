@@ -7,6 +7,12 @@
 
 **Публичное демо:** <https://intent-demo.online>
 
+**HTTP API:** все функции UI (`analyze_text`, `analyze_text_utterances`,
+`analyze_audio`, загрузка файла) доступны как Gradio HTTP API. Документация
+эндпоинтов, примеры curl/`gradio_client` и Postman-коллекция —
+[`docs/api.md`](../docs/api.md) и
+[`docs/postman/intent_demo_postman_collection.json`](../docs/postman/intent_demo_postman_collection.json).
+
 Приложение принимает на вход русскоязычный текст или голосовую запись и
 возвращает:
 
@@ -350,7 +356,21 @@ huggingface-cli download ozonize/dialogsum-ru-intent-rubert \
   `Суммаризация недоступна: <причина>`. Через
   `ENABLE_SUMMARIZATION=false` суммаризацию можно явно отключить.
 
-## API analyze()
+## HTTP API (Gradio)
+
+Помимо Python-вызова `analyze()` (см. ниже), все функции UI поднимаются
+Gradio как HTTP API в формате `POST → event_id → GET → результат`:
+
+- эндпоинт-функции: `analyze_text`, `analyze_text_utterances`,
+  `analyze_audio`, плюс `/gradio_api/upload` для локальных аудиофайлов;
+- base URL продового демо — `https://intent-demo.online`,
+  префикс — `/gradio_api`;
+- полная документация со схемой входов/выходов, примерами curl и
+  `gradio_client`, а также Postman-коллекция со всеми запросами —
+  [`docs/api.md`](../docs/api.md) и
+  [`docs/postman/intent_demo_postman_collection.json`](../docs/postman/intent_demo_postman_collection.json).
+
+## Python API: `analyze()`
 
 ```python
 from model_pipeline import analyze, get_artifact_status

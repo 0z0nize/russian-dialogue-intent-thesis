@@ -1,0 +1,388 @@
+{
+  "info": {
+    "name": "Intent Demo API (intent-demo.online)",
+    "description": "Коллекция запросов к Gradio-приложению анализа намерений и тем русскоязычных диалогов. Каждый вызов состоит из двух шагов: POST для отправки данных (получаем event_id) и GET для получения результата.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://intent-demo.online",
+      "type": "string"
+    },
+    {
+      "key": "event_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "analyze_text — POST (отправить текст)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.event_id) {",
+              "  pm.collectionVariables.set('event_id', json.event_id);",
+              "  console.log('event_id =', json.event_id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"data\": [\"Здравствуйте, я хочу оформить возврат товара\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/analyze_text",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "analyze_text"]
+        }
+      }
+    },
+    {
+      "name": "analyze_text — GET (получить результат)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/analyze_text/{{event_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "analyze_text", "{{event_id}}"]
+        }
+      }
+    },
+    {
+      "name": "analyze_text_utterances — POST",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.event_id) pm.collectionVariables.set('event_id', json.event_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"data\": [\"#Person1#: Здравствуйте, у меня не работает интернет.\\n#Person2#: Подскажите, пожалуйста, ваш номер договора.\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/analyze_text_utterances",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "analyze_text_utterances"]
+        }
+      }
+    },
+    {
+      "name": "analyze_text_utterances — GET",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/analyze_text_utterances/{{event_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "analyze_text_utterances", "{{event_id}}"]
+        }
+      }
+    },
+    {
+      "name": "analyze_audio — POST (через URL файла)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.event_id) pm.collectionVariables.set('event_id', json.event_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"data\": [\n    {\n      \"path\": \"https://github.com/gradio-app/gradio/raw/main/test/test_files/audio_sample.wav\",\n      \"meta\": {\"_type\": \"gradio.FileData\"}\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/analyze_audio",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "analyze_audio"]
+        }
+      }
+    },
+    {
+      "name": "analyze_audio — GET",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/analyze_audio/{{event_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "analyze_audio", "{{event_id}}"]
+        }
+      }
+    },
+    {
+      "name": "Upload файла (для analyze_audio через локальный файл)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "files", "type": "file", "src": [] }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/gradio_api/upload",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "upload"]
+        },
+        "description": "Сначала загрузите файл этим запросом — вернётся путь, который нужно подставить в analyze_audio в поле `path`."
+      }
+    },
+    {
+      "name": "lambda — POST (примеры в textbox)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.event_id) pm.collectionVariables.set('event_id', json.event_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"data\": []\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/lambda",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "lambda"]
+        }
+      }
+    },
+    {
+      "name": "lambda — GET",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/lambda/{{event_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "lambda", "{{event_id}}"]
+        }
+      }
+    },
+    {
+      "name": "lambda_1 — POST",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.event_id) pm.collectionVariables.set('event_id', json.event_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"data\": []\n}" },
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/lambda_1",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "lambda_1"]
+        }
+      }
+    },
+    {
+      "name": "lambda_1 — GET",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/lambda_1/{{event_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "lambda_1", "{{event_id}}"]
+        }
+      }
+    },
+    {
+      "name": "lambda_2 — POST",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.event_id) pm.collectionVariables.set('event_id', json.event_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"data\": []\n}" },
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/lambda_2",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "lambda_2"]
+        }
+      }
+    },
+    {
+      "name": "lambda_2 — GET",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/lambda_2/{{event_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "lambda_2", "{{event_id}}"]
+        }
+      }
+    },
+    {
+      "name": "lambda_3 — POST",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.event_id) pm.collectionVariables.set('event_id', json.event_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"data\": []\n}" },
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/lambda_3",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "lambda_3"]
+        }
+      }
+    },
+    {
+      "name": "lambda_3 — GET",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/lambda_3/{{event_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "lambda_3", "{{event_id}}"]
+        }
+      }
+    },
+    {
+      "name": "lambda_4 — POST",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.event_id) pm.collectionVariables.set('event_id', json.event_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"data\": []\n}" },
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/lambda_4",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "lambda_4"]
+        }
+      }
+    },
+    {
+      "name": "lambda_4 — GET",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/lambda_4/{{event_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "lambda_4", "{{event_id}}"]
+        }
+      }
+    },
+    {
+      "name": "_clear_voice_outputs — POST",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.event_id) pm.collectionVariables.set('event_id', json.event_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"data\": []\n}" },
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/_clear_voice_outputs",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "_clear_voice_outputs"]
+        }
+      }
+    },
+    {
+      "name": "_clear_voice_outputs — GET",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/gradio_api/call/_clear_voice_outputs/{{event_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["gradio_api", "call", "_clear_voice_outputs", "{{event_id}}"]
+        }
+      }
+    }
+  ]
+}

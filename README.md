@@ -169,6 +169,19 @@ python app.py
 
 Подробная инструкция по развёртыванию и параметрам конфигурации — в [`dialogsum_intent_webapp/README.md`](dialogsum_intent_webapp/README.md).
 
+### HTTP API публичного демо
+
+Все функции веб-приложения (анализ текста, по-репличный анализ диалога,
+анализ аудио со встроенным STT) доступны как HTTP API в стандартном
+формате Gradio (`POST → event_id → GET → результат`).
+
+- Документация эндпоинтов, примеры curl/`gradio_client` и список классов
+  интента — [`docs/api.md`](docs/api.md).
+- Готовая Postman-коллекция со всеми запросами и автозаполнением
+  `event_id` — [`docs/postman/intent_demo_postman_collection.json`](docs/postman/intent_demo_postman_collection.json).
+- Base URL продового демо — `https://intent-demo.online`,
+  префикс API — `/gradio_api`.
+
 ## Содержание ВКР
 
 - Список сокращений и условных обозначений
@@ -231,7 +244,7 @@ Notebooks 00–09 реализуют основной экспериментал
   - `src/utils/` — вспомогательные функции.
 - `models/` — артефакты моделей (не хранятся в Git; финальная модель — на Hugging Face Hub).
 - `results/` — результаты экспериментов (`tables/`, `figures/`, `logs/`, `predictions/`).
-- `docs/` — материалы по плану ВКР, литература, заметки.
+- `docs/` — материалы по плану ВКР, литература, заметки, [HTTP API публичного демо](docs/api.md) и [Postman-коллекция](docs/postman/intent_demo_postman_collection.json).
 - `reports/` — черновики отчётов и тексты.
 - `dialogsum_intent_webapp/` — Gradio-приложение с финальной моделью (см. раздел [Веб-приложение](#веб-приложение)).
 
