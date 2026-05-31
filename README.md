@@ -218,24 +218,9 @@ python app.py
 
 ## Ноутбуки
 
-Notebooks 00–09 реализуют основной экспериментальный конвейер ВКР, notebook 10 — вспомогательный инструмент ручной валидации интентов, notebook 11 — нейросетевое многозадачное моделирование и финальная модель для веб-приложения.
+Исследовательские ноутбуки находятся в директории `notebooks/` и упорядочены по числовым префиксам (`00`–`11`). Они охватывают полный цикл работы: подготовку данных, обучение моделей, оценку качества и анализ результатов — от первичной загрузки и EDA до тематического моделирования, распознавания намерений и нейросетевого многозадачного моделирования на RuBERT-base (источник финальной модели для веб-приложения).
 
-| № | Файл | Назначение |
-| --- | --- | --- |
-| 00 | [`notebooks/00_create_drive_folders.ipynb`](notebooks/00_create_drive_folders.ipynb) | Создание структуры папок проекта в Google Drive (служебно) |
-| 01 | [`notebooks/01_data_loading_and_eda.ipynb`](notebooks/01_data_loading_and_eda.ipynb) | Первичная загрузка данных и EDA |
-| 02 | [`notebooks/02_annotation_prep.ipynb`](notebooks/02_annotation_prep.ipynb) | Подготовка материалов для разметки |
-| 03 | [`notebooks/03_annotation_sanity_check.ipynb`](notebooks/03_annotation_sanity_check.ipynb) | Контроль качества разметки |
-| 04 | [`notebooks/04_baseline_modeling.ipynb`](notebooks/04_baseline_modeling.ipynb) | Baselines для распознавания намерений |
-| 05 | [`notebooks/05_hierarchical_intent_modeling.ipynb`](notebooks/05_hierarchical_intent_modeling.ipynb) | Иерархическое моделирование интентов |
-| 06 | [`notebooks/06_english_translation_intent_modeling.ipynb`](notebooks/06_english_translation_intent_modeling.ipynb) | Эксперимент с переводом на английский |
-| 07 | [`notebooks/07_dialogsum_ru_eda.ipynb`](notebooks/07_dialogsum_ru_eda.ipynb) | EDA на корпусе DialogSum-RU (глава 4) |
-| 08 | [`notebooks/08_topic_modeling_dialogsum_ru.ipynb`](notebooks/08_topic_modeling_dialogsum_ru.ipynb) | Тематическое моделирование: embeddings + UMAP + HDBSCAN, 208 кластеров, silhouette ≈ 0,7623 (глава 5) |
-| 09 | [`notebooks/09_intent_modeling_dialogsum_ru.ipynb`](notebooks/09_intent_modeling_dialogsum_ru.ipynb) | Распознавание намерений: слабая разметка, baselines, RuBERT-tiny2 (главы 6–7) |
-| 10 | [`notebooks/10_intent_manual_validation_dialogsum_ru.ipynb`](notebooks/10_intent_manual_validation_dialogsum_ru.ipynb) | Инструмент ручной валидации интентов |
-| 11 | [`notebooks/11_neural_multitask_intent_topic_dialogsum_ru.ipynb`](notebooks/11_neural_multitask_intent_topic_dialogsum_ru.ipynb) | Нейросетевое моделирование на RuBERT-base: однозадачная vs многозадачная архитектура; источник финальной модели для веб-приложения |
-
-Подробная навигация по ноутбукам и ссылки на nbviewer (на случай, если GitHub не отображает `.ipynb`): [`notebooks/README.md`](notebooks/README.md).
+Полный список ноутбуков с описаниями и стабильными ссылками для просмотра (nbviewer и Google Colab на случай, если GitHub не отображает `.ipynb`) — в [`notebooks/README.md`](notebooks/README.md).
 
 ## Структура репозитория
 
