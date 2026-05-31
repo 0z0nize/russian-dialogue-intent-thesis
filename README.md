@@ -235,6 +235,8 @@ Notebooks 00–09 реализуют основной экспериментал
 | 10 | [`notebooks/10_intent_manual_validation_dialogsum_ru.ipynb`](notebooks/10_intent_manual_validation_dialogsum_ru.ipynb) | Инструмент ручной валидации интентов |
 | 11 | [`notebooks/11_neural_multitask_intent_topic_dialogsum_ru.ipynb`](notebooks/11_neural_multitask_intent_topic_dialogsum_ru.ipynb) | Нейросетевое моделирование на RuBERT-base: однозадачная vs многозадачная архитектура; источник финальной модели для веб-приложения |
 
+Подробная навигация по ноутбукам и ссылки на nbviewer (на случай, если GitHub не отображает `.ipynb`): [`notebooks/README.md`](notebooks/README.md).
+
 ## Структура репозитория
 
 - `configs/` — конфигурации данных, моделей и экспериментов.
