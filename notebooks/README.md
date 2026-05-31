@@ -6,7 +6,7 @@
 
 > Если GitHub не отображает `.ipynb` (ошибка рендеринга или «Sorry, something went wrong»), откройте ноутбук через [nbviewer](https://nbviewer.org/) по соответствующей ссылке из таблицы ниже. Если nbviewer тоже недоступен (например, возвращает ошибку 503 или «GitHub API rate limit exceeded»), используйте ссылку **Colab** — она открывает ноутбук в [Google Colab](https://colab.research.google.com/) как ещё один способ просмотра.
 
-| № | Файл | Назначение | nbviewer | Colab |
+| № | GitHub | Назначение | nbviewer | Colab |
 | --- | --- | --- | --- | --- |
 | 00 | [`00_create_drive_folders.ipynb`](00_create_drive_folders.ipynb) | Создание структуры папок проекта в Google Drive (служебно) | [nbviewer](https://nbviewer.org/github/0z0nize/russian-dialogue-intent-thesis/blob/main/notebooks/00_create_drive_folders.ipynb) | [Colab](https://colab.research.google.com/github/0z0nize/russian-dialogue-intent-thesis/blob/main/notebooks/00_create_drive_folders.ipynb) |
 | 01 | [`01_data_loading_and_eda.ipynb`](01_data_loading_and_eda.ipynb) | Первичная загрузка данных и EDA | [nbviewer](https://nbviewer.org/github/0z0nize/russian-dialogue-intent-thesis/blob/main/notebooks/01_data_loading_and_eda.ipynb) | [Colab](https://colab.research.google.com/github/0z0nize/russian-dialogue-intent-thesis/blob/main/notebooks/01_data_loading_and_eda.ipynb) |
