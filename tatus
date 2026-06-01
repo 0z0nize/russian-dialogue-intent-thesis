@@ -1,0 +1,358 @@
+[1mdiff --git a/dialogsum_intent_webapp/model_pipeline.py b/dialogsum_intent_webapp/model_pipeline.py[m
+[1mindex 256ae86..31c67fb 100644[m
+[1m--- a/dialogsum_intent_webapp/model_pipeline.py[m
+[1m+++ b/dialogsum_intent_webapp/model_pipeline.py[m
+[36m@@ -32,7 +32,9 @@[m [mfrom typing import Any, Dict, List, Optional[m
+ import numpy as np[m
+ [m
+ logger = logging.getLogger(__name__)[m
+[31m-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")[m
+[32m+[m[32mlogging.basicConfig([m
+[32m+[m[32m    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s"[m
+[32m+[m[32m)[m
+ [m
+ # ---------------------------------------------------------------------------[m
+ # Глобальное состояние артефактов и моделей[m
+[36m@@ -45,19 +47,19 @@[m [m_ARTIFACTS: Dict[str, Any] = {[m
+     "topic_metadata": None,[m
+     "sentence_encoder": None,[m
+     # single-task RuBERT runtime[m
+[31m-    "torch_intent_runtime": None,        # SingleTaskIntentModelRuntime instance after lazy build[m
+[31m-    "torch_intent_state_path": None,     # путь к .pt, обнаруженный при load_artifacts[m
+[31m-    "torch_intent_state_source": None,   # "local" | "huggingface_hub"[m
+[31m-    "torch_intent_config": None,         # dict из multitask_config.json (если есть)[m
+[32m+[m[32m    "torch_intent_runtime": None,  # SingleTaskIntentModelRuntime instance after lazy build[m
+[32m+[m[32m    "torch_intent_state_path": None,  # путь к .pt, обнаруженный при load_artifacts[m
+[32m+[m[32m    "torch_intent_state_source": None,  # "local" | "huggingface_hub"[m
+[32m+[m[32m    "torch_intent_config": None,  # dict из multitask_config.json (если есть)[m
+     "torch_intent_config_source": None,[m
+     "torch_intent_label_encoder_source": None,[m
+[31m-    "torch_intent_load_error": None,     # последнее предупреждение при загрузке[m
+[31m-    "torch_intent_attempted": False,     # уже пытались lazy-build[m
+[32m+[m[32m    "torch_intent_load_error": None,  # последнее предупреждение при загрузке[m
+[32m+[m[32m    "torch_intent_attempted": False,  # уже пытались lazy-build[m
+     # summarization[m
+     "summarizer_model": None,[m
+     "summarizer_tokenizer": None,[m
+     "summarizer_attempted": False,[m
+[31m-    "summarizer_source": None,           # "local" | "huggingface_hub"[m
+[32m+[m[32m    "summarizer_source": None,  # "local" | "huggingface_hub"[m
+     "summarizer_path_or_name": None,[m
+     "summarizer_load_error": None,[m
+     "summarizer_device": None,[m
+[36m@@ -123,7 +125,9 @@[m [mdef _hf_download(filename: str) -> Optional[Path]:[m
+         return Path(local)[m
+     except Exception as exc:[m
+         _ARTIFACTS["hf_download_error"] = f"{filename}: {exc}"[m
+[31m-        logger.warning("HF Hub: не удалось скачать %s из %s: %s", filename, repo_id, exc)[m
+[32m+[m[32m        logger.warning([m
+[32m+[m[32m            "HF Hub: не удалось скачать %s из %s: %s", filename, repo_id, exc[m
+[32m+[m[32m        )[m
+         return None[m
+ [m
+ [m
+[36m@@ -150,19 +154,93 @@[m [mINTENT_CLASSES: List[str] = [[m
+ [m
+ # Ключевые слова для rule-based fallback по интентам.[m
+ _INTENT_KEYWORDS: Dict[str, List[str]] = {[m
+[31m-    "greeting": ["здравствуй", "привет", "добрый день", "доброе утро", "добрый вечер", "здравствуйте"],[m
+[32m+[m[32m    "greeting": [[m
+[32m+[m[32m        "здравствуй",[m
+[32m+[m[32m        "привет",[m
+[32m+[m[32m        "добрый день",[m
+[32m+[m[32m        "доброе утро",[m
+[32m+[m[32m        "добрый вечер",[m
+[32m+[m[32m        "здравствуйте",[m
+[32m+[m[32m    ],[m
+     "thanks": ["спасибо", "благодар", "признателен", "благодарю"],[m
+     "farewell": ["до свидания", "пока", "всего доброго", "до встречи", "счастливо"],[m
+[31m-    "informational_request": ["как узнать", "подскажите", "сколько стоит", "какие есть", "что такое", "почему", "когда", "где"],[m
+[31m-    "service_request": ["помогите", "нужна помощь", "проконсультируйте", "оформите", "сделайте", "нужно оформить"],[m
+[31m-    "purchase_or_booking_request": ["забронировать", "купить", "заказать", "оплатить", "оформить заказ", "хочу купить", "бронь"],[m
+[31m-    "complaint": ["жалоба", "недовольн", "ужасно", "плохо", "возмутитель", "не работает", "обманули"],[m
+[31m-    "problem_report": ["проблема", "не получается", "ошибка", "сломал", "не могу", "не работает", "сбой"],[m
+[31m-    "arrangement": ["договоримся", "встретимся", "давайте в", "назначим", "когда удобно", "запланируем"],[m
+[31m-    "confirmation": ["да", "согласен", "хорошо", "подтвержд", "конечно", "договорились"],[m
+[32m+[m[32m    "informational_request": [[m
+[32m+[m[32m        "как узнать",[m
+[32m+[m[32m        "подскажите",[m
+[32m+[m[32m        "сколько стоит",[m
+[32m+[m[32m        "какие есть",[m
+[32m+[m[32m        "что такое",[m
+[32m+[m[32m        "почему",[m
+[32m+[m[32m        "когда",[m
+[32m+[m[32m        "где",[m
+[32m+[m[32m    ],[m
+[32m+[m[32m    "service_request": [[m
+[32m+[m[32m        "помогите",[m
+[32m+[m[32m        "нужна помощь",[m
+[32m+[m[32m        "проконсультируйте",[m
+[32m+[m[32m        "оформите",[m
+[32m+[m[32m        "сделайте",[m
+[32m+[m[32m        "нужно оформить",[m
+[32m+[m[32m    ],[m
+[32m+[m[32m    "purchase_or_booking_request": [[m
+[32m+[m[32m        "забронировать",[m
+[32m+[m[32m        "купить",[m
+[32m+[m[32m        "заказать",[m
+[32m+[m[32m        "оплатить",[m
+[32m+[m[32m        "оформить заказ",[m
+[32m+[m[32m        "хочу купить",[m
+[32m+[m[32m        "бронь",[m
+[32m+[m[32m    ],[m
+[32m+[m[32m    "complaint": [[m
+[32m+[m[32m        "жалоба",[m
+[32m+[m[32m        "недовольн",[m
+[32m+[m[32m        "ужасно",[m
+[32m+[m[32m        "плохо",[m
+[32m+[m[32m        "возмутитель",[m
+[32m+[m[32m        "не работает",[m
+[32m+[m[32m        "обманули",[m
+[32m+[m[32m    ],[m
+[32m+[m[32m    "problem_report": [[m
+[32m+[m[32m        "проблема",[m
+[32m+[m[32m        "не получается",[m
+[32m+[m[32m        "ошибка",[m
+[32m+[m[32m        "сломал",[m
+[32m+[m[32m        "не могу",[m
+[32m+[m[32m        "не работает",[m
+[32m+[m[32m        "сбой",[m
+[32m+[m[32m    ],[m
+[32m+[m[32m    "arrangement": [[m
+[32m+[m[32m        "договоримся",[m
+[32m+[m[32m        "встретимся",[m
+[32m+[m[32m        "давайте в",[m
+[32m+[m[32m        "назначим",[m
+[32m+[m[32m        "когда удобно",[m
+[32m+[m[32m        "запланируем",[m
+[32m+[m[32m    ],[m
+[32m+[m[32m    "confirmation": [[m
+[32m+[m[32m        "да",[m
+[32m+[m[32m        "согласен",[m
+[32m+[m[32m        "хорошо",[m
+[32m+[m[32m        "подтвержд",[m
+[32m+[m[32m        "конечно",[m
+[32m+[m[32m        "договорились",[m
+[32m+[m[32m    ],[m
+     "rejection": ["нет", "отказ", "не нужно", "не хочу", "не буду", "не подходит"],[m
+[31m-    "suggestion_or_recommendation": ["рекомендую", "советую", "предлагаю", "попробуйте", "лучше выбрать"],[m
+[31m-    "opinion_or_preference": ["мне нравится", "я думаю", "по-моему", "считаю", "предпочитаю", "люблю"],[m
+[32m+[m[32m    "suggestion_or_recommendation": [[m
+[32m+[m[32m        "рекомендую",[m
+[32m+[m[32m        "советую",[m
+[32m+[m[32m        "предлагаю",[m
+[32m+[m[32m        "попробуйте",[m
+[32m+[m[32m        "лучше выбрать",[m
+[32m+[m[32m    ],[m
+[32m+[m[32m    "opinion_or_preference": [[m
+[32m+[m[32m        "мне нравится",[m
+[32m+[m[32m        "я думаю",[m
+[32m+[m[32m        "по-моему",[m
+[32m+[m[32m        "считаю",[m
+[32m+[m[32m        "предпочитаю",[m
+[32m+[m[32m        "люблю",[m
+[32m+[m[32m    ],[m
+ }[m
+ [m
+ [m
+[36m@@ -238,6 +316,7 @@[m [m_TOPIC_FALLBACK: List[Dict[str, Any]] = [[m
+ # Загрузка артефактов[m
+ # ---------------------------------------------------------------------------[m
+ [m
+[32m+[m
+ def _env_flag(name: str, default: bool = True) -> bool:[m
+     val = os.environ.get(name)[m
+     if val is None:[m
+[36m@@ -283,7 +362,9 @@[m [mdef load_artifacts(models_dir: str = "models") -> Dict[str, Any]:[m
+     быстрым.[m
+     """[m
+     models_path = Path(models_dir)[m
+[31m-    _ARTIFACTS["models_dir"] = str(models_path.resolve()) if models_path.exists() else str(models_path)[m
+[32m+[m[32m    _ARTIFACTS["models_dir"] = ([m
+[32m+[m[32m        str(models_path.resolve()) if models_path.exists() else str(models_path)[m
+[32m+[m[32m    )[m
+     _ARTIFACTS["hf_repo_id"] = _hf_repo_id()[m
+     _ARTIFACTS["hf_available"] = False[m
+     _ARTIFACTS["hf_download_error"] = None[m
+[36m@@ -299,11 +380,15 @@[m [mdef load_artifacts(models_dir: str = "models") -> Dict[str, Any]:[m
+     if intent_label_path is not None:[m
+         try:[m
+             import joblib  # noqa: WPS433[m
+[32m+[m
+             _ARTIFACTS["intent_label_encoder"] = joblib.load(intent_label_path)[m
+[31m-            _ARTIFACTS["torch_intent_label_encoder_source"] = _label_source(local_path is not None)[m
+[32m+[m[32m            _ARTIFACTS["torch_intent_label_encoder_source"] = _label_source([m
+[32m+[m[32m                local_path is not None[m
+[32m+[m[32m            )[m
+             logger.info([m
+                 "Загружен intent_label_encoder.joblib (%s: %s)",[m
+[31m-                _ARTIFACTS["torch_intent_label_encoder_source"], intent_label_path,[m
+[32m+[m[32m                _ARTIFACTS["torch_intent_label_encoder_source"],[m
+[32m+[m[32m                intent_label_path,[m
+             )[m
+             if local_path is None:[m
+                 _ARTIFACTS["hf_available"] = True[m
+[36m@@ -315,6 +400,7 @@[m [mdef load_artifacts(models_dir: str = "models") -> Dict[str, Any]:[m
+     if intent_model_path is not None:[m
+         try:[m
+             import joblib  # noqa: WPS433[m
+[32m+[m
+             _ARTIFACTS["intent_model"] = joblib.load(intent_model_path)[m
+             logger.info("Загружен intent_model.joblib: %s", intent_model_path)[m
+         except Exception as exc:  # pragma: no cover - зависит от артефактов[m
+[36m@@ -327,7 +413,9 @@[m [mdef load_artifacts(models_dir: str = "models") -> Dict[str, Any]:[m
+         try:[m
+             with open(config_path, "r", encoding="utf-8") as f:[m
+                 _ARTIFACTS["torch_intent_config"] = json.load(f)[m
+[31m-            _ARTIFACTS["torch_intent_config_source"] = _label_source(local_path is not None)[m
+[32m+[m[32m            _ARTIFACTS["torch_intent_config_source"] = _label_source([m
+[32m+[m[32m                local_path is not None[m
+[32m+[m[32m            )[m
+             logger.info([m
+                 "Загружен multitask_config.json (%s): model_name=%s, num_intents=%s",[m
+                 _ARTIFACTS["torch_intent_config_source"],[m
+[36m@@ -340,7 +428,9 @@[m [mdef load_artifacts(models_dir: str = "models") -> Dict[str, Any]:[m
+             logger.warning("Не удалось прочитать multitask_config.json: %s", exc)[m
+ [m
+     # single-task RuBERT state_dict[m
+[31m-    intent_state_file = os.environ.get("INTENT_MODEL_FILE", "single_task_intent_model.pt")[m
+[32m+[m[32m    intent_state_file = os.environ.get([m
+[32m+[m[32m        "INTENT_MODEL_FILE", "single_task_intent_model.pt"[m
+[32m+[m[32m    )[m
+     local_path = _resolve_artifact_local(intent_state_file, models_path)[m
+     intent_state_path = local_path or _hf_download(intent_state_file)[m
+     if intent_state_path is not None:[m
+[36m@@ -348,7 +438,8 @@[m [mdef load_artifacts(models_dir: str = "models") -> Dict[str, Any]:[m
+         _ARTIFACTS["torch_intent_state_source"] = _label_source(local_path is not None)[m
+         logger.info([m
+             "Обнаружен single-task RuBERT state_dict (%s): %s (lazy-load при первом predict_intent)",[m
+[31m-            _ARTIFACTS["torch_intent_state_source"], intent_state_path,[m
+[32m+[m[32m            _ARTIFACTS["torch_intent_state_source"],[m
+[32m+[m[32m            intent_state_path,[m
+         )[m
+         if local_path is None:[m
+             _ARTIFACTS["hf_available"] = True[m
+[36m@@ -358,7 +449,10 @@[m [mdef load_artifacts(models_dir: str = "models") -> Dict[str, Any]:[m
+     if centroids_path is not None:[m
+         try:[m
+             _ARTIFACTS["topic_centroids"] = np.load(centroids_path)[m
+[31m-            logger.info("Загружен topic_centroids.npy: shape=%s", _ARTIFACTS["topic_centroids"].shape)[m
+[32m+[m[32m            logger.info([m
+[32m+[m[32m                "Загружен topic_centroids.npy: shape=%s",[m
+[32m+[m[32m                _ARTIFACTS["topic_centroids"].shape,[m
+[32m+[m[32m            )[m
+         except Exception as exc:  # pragma: no cover[m
+             logger.warning("Не удалось загрузить topic_centroids.npy: %s", exc)[m
+ [m
+[36m@@ -367,8 +461,12 @@[m [mdef load_artifacts(models_dir: str = "models") -> Dict[str, Any]:[m
+     if meta_path is not None:[m
+         try:[m
+             import pandas as pd  # noqa: WPS433[m
+[32m+[m
+             _ARTIFACTS["topic_metadata"] = pd.read_parquet(meta_path)[m
+[31m-            logger.info("Загружен topic_metadata.parquet: rows=%d", len(_ARTIFACTS["topic_metadata"]))[m
+[32m+[m[32m            logger.info([m
+[32m+[m[32m                "Загружен topic_metadata.parquet: rows=%d",[m
+[32m+[m[32m                len(_ARTIFACTS["topic_metadata"]),[m
+[32m+[m[32m            )[m
+         except Exception as exc:  # pragma: no cover[m
+             logger.warning("Не удалось загрузить topic_metadata.parquet: %s", exc)[m
+ [m
+[36m@@ -418,7 +516,9 @@[m [mdef get_artifact_status() -> Dict[str, Any]:[m
+         "torch_intent_state_path": _ARTIFACTS.get("torch_intent_state_path"),[m
+         "torch_intent_state_source": intent_state_source,[m
+         "intent_label_encoder_found": has_encoder,[m
+[31m-        "intent_label_encoder_source": _ARTIFACTS.get("torch_intent_label_encoder_source"),[m
+[32m+[m[32m        "intent_label_encoder_source": _ARTIFACTS.get([m
+[32m+[m[32m            "torch_intent_label_encoder_source"[m
+[32m+[m[32m        ),[m
+         "multitask_config_found": has_config,[m
+         "multitask_config_source": _ARTIFACTS.get("torch_intent_config_source"),[m
+         "torch_intent_runtime_loaded": runtime_loaded,[m
+[36m@@ -507,8 +607,12 @@[m [mclass SingleTaskIntentModelRuntime:[m
+     def load_state_dict_from_path(self, path: str) -> Dict[str, Any]:[m
+         torch = self._torch[m
+         state = torch.load(path, map_location="cpu")[m
+[31m-        if isinstance(state, dict) and "state_dict" in state and not any([m
+[31m-            k.startswith(("encoder.", "proj.", "intent_head.")) for k in state[m
+[32m+[m[32m        if ([m
+[32m+[m[32m            isinstance(state, dict)[m
+[32m+[m[32m            and "state_dict" in state[m
+[32m+[m[32m            and not any([m
+[32m+[m[32m                k.startswith(("encoder.", "proj.", "intent_head.")) for k in state[m
+[32m+[m[32m            )[m
+         ):[m
+             state = state["state_dict"][m
+ [m
+[36m@@ -599,11 +703,14 @@[m [mdef _build_torch_intent_runtime() -> Optional[SingleTaskIntentModelRuntime]:[m
+     )[m
+     max_len = int(config.get("max_len") or _DEFAULT_TORCH_MAX_LEN)[m
+     num_intents_cfg = config.get("num_intents")[m
+[31m-    num_intents = int(num_intents_cfg) if num_intents_cfg else len(label_encoder.classes_)[m
+[32m+[m[32m    num_intents = ([m
+[32m+[m[32m        int(num_intents_cfg) if num_intents_cfg else len(label_encoder.classes_)[m
+[32m+[m[32m    )[m
+     if num_intents != len(label_encoder.classes_):[m
+         logger.warning([m
+             "num_intents из config (%s) != len(label_encoder.classes_) (%s); используем encoder",[m
+[31m-            num_intents_cfg, len(label_encoder.classes_),[m
+[32m+[m[32m            num_intents_cfg,[m
+[32m+[m[32m            len(label_encoder.classes_),[m
+         )[m
+         num_intents = len(label_encoder.classes_)[m
+ [m
+[36m@@ -627,7 +734,9 @@[m [mdef _build_torch_intent_runtime() -> Optional[SingleTaskIntentModelRuntime]:[m
+         _ARTIFACTS["torch_intent_load_error"] = None[m
+     logger.info([m
+         "Single-task RuBERT runtime готов: base=%s, num_intents=%d, device=%s",[m
+[31m-        base_model_name, num_intents, info.get("device"),[m
+[32m+[m[32m        base_model_name,[m
+[32m+[m[32m        num_intents,[m
+[32m+[m[32m        info.get("device"),[m
+     )[m
+     return runtime[m
+ [m
+[36m@@ -636,13 +745,18 @@[m [mdef _build_torch_intent_runtime() -> Optional[SingleTaskIntentModelRuntime]:[m
+ # Sentence encoder (для тематики, если есть centroids)[m
+ # ---------------------------------------------------------------------------[m
+ [m
+[32m+[m
+ def _get_sentence_encoder():[m
+     """Ленивая инициализация sentence-transformers (только если нужно)."""[m
+     if _ARTIFACTS["sentence_encoder"] is not None:[m
+         return _ARTIFACTS["sentence_encoder"][m
+     try:[m
+         from sentence_transformers import SentenceTransformer  # noqa: WPS433[m
+[31m-        model_name = os.environ.get("SENTENCE_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")[m
+[32m+[m
+[32m+[m[32m        model_name = os.environ.get([m
+[32m+[m[32m            "SENTENCE_MODEL",[m
+[32m+[m[32m            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",[m
+[32m+[m[32m        )[m
+         logger.info("Инициализация sentence-transformers: %s", model_name)[m
+         _ARTIFACTS["sentence_encoder"] = SentenceTransformer(model_name)[m
+         return _ARTIFACTS["sentence_encoder"][m
+[36m@@ -655,6 +769,7 @@[m [mdef _get_sentence_encoder():[m
+ # STT: faster-whisper (ленивая загрузка)[m
+ # ---------------------------------------------------------------------------[m
+ [m
+[32m+[m
+ def _get_whisper():[m
+     global _WHISPER_MODEL[m
+     if _WHISPER_MODEL is not None:[m
+[36m@@ -671,15 +786,23 @@[m [mdef _get_whisper():[m
+     compute_type = "int8"[m
+     try:[m
+         import torch  # noqa: WPS433[m
+[32m+[m
+         if torch.cuda.is_available():[m
+             device = "cuda"[m
+             compute_type = "float16"[m
+     except Exception:  # pragma: no cover[m
+         pass[m
+ [m
+[31m-    logger.info("Загрузка Whisper: size=%s, device=%s, compute_type=%s", model_size, device, compute_type)[m
+[32m+[m[32m    logger.info([m
+[32m+[m[32m        "Загрузка Whisper: size=%s, device=%s, compute_type=%s",[m
+[32m+[m[32m        model_size,[m
+[32m+[m[32m        dev
