@@ -53,11 +53,11 @@ audio ──► faster-whisper (lazy)
   музыкальные события, развлечения) и несколько готовых фраз-примеров.
 - STT: **faster-whisper** (русский язык, ленивая загрузка модели).
 - Intent: лучшая модель — single-task RuBERT
-  (`DeepPavlov/rubert-base-cased-conversational`, accuracy 0.9126, macro-F1 0.7770).
+  (`DeepPavlov/rubert-base-cased-conversational`, accuracy 0.9054, macro-F1 0.7794).
   При отсутствии артефактов включается rule-based fallback.
 - Topic: пока остаётся в режиме centroids/keyword fallback —
-  multi-task topic head даёт topic accuracy ~0.21 (fine) и
-  ~0.51 (coarse), что хуже отдельной кластерной пайплайны.
+  multi-task topic head даёт topic accuracy ~0.17 (fine) и
+  ~0.52 (coarse), что хуже отдельной кластерной пайплайны.
 - Без платных внешних API.
 
 ### Режим «Анализировать по репликам» (DialogSum-RU)
@@ -244,13 +244,17 @@ docker compose up --build -d
   из обучающих ноутбуков).
 
 Лучший по итогам последнего прогона режим — **single-task RuBERT**
-(`DeepPavlov/rubert-base-cased-conversational`):
+(`DeepPavlov/rubert-base-cased-conversational`). Полные текстовые дубликаты
+реплик выявлены и устранены до разбиения на train/val/test (удалено 425 из
+4 722, итоговый корпус 4 297; train 3 007 / val 645 / test 645); повторная
+оценка подтвердила устойчивость single-task модели:
 
-- Test accuracy **0.9126**
-- Test macro-F1 **0.7770**
-- Test macro-F1 без `other` **0.7914**
-- Сравнение: multi-task `lambda_topic=0.1 + coarse` даёт accuracy 0.9083 /
-  macro-F1 0.7580, topic acc 0.2130, coarse topic acc 0.5134.
+- Test accuracy **0.9054**
+- Test macro-F1 **0.7794**
+- Test macro-F1 без `other` **0.8066**
+- Test weighted-F1 **0.9034**
+- Сравнение: multi-task `lambda_topic=0.1 + coarse` даёт accuracy 0.8930 /
+  macro-F1 0.7612, topic acc 0.1705, coarse topic acc 0.5178.
 
 ### Автоматическая загрузка с Hugging Face Hub
 

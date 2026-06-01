@@ -17,15 +17,19 @@
 
 ## Best модель (по умолчанию)
 
-Лучший итоговый результат на DialogSum-RU дала **single-task RuBERT** модель:
+Лучший итоговый результат на DialogSum-RU дала **single-task RuBERT** модель.
+Полные текстовые дубликаты реплик выявлены и устранены до разбиения на
+train/val/test (удалено 425 из 4 722, итоговый корпус 4 297; train 3 007 /
+val 645 / test 645); повторная оценка подтвердила устойчивость модели:
 
 | Метрика | Single-task | Multi-task (λ_topic=0.1 + coarse) |
 |---|---|---|
-| Test accuracy | **0.9126** | 0.9083 |
-| Test macro-F1 | **0.7770** | 0.7580 |
-| Test macro-F1 (без `other`) | **0.7914** | — |
-| Topic accuracy | — | 0.2130 |
-| Coarse topic accuracy | — | 0.5134 |
+| Test accuracy | **0.9054** | 0.8930 |
+| Test macro-F1 | **0.7794** | 0.7612 |
+| Test macro-F1 (без `other`) | **0.8066** | 0.7813 |
+| Test weighted-F1 | **0.9034** | 0.8889 |
+| Topic accuracy | — | 0.1705 |
+| Coarse topic accuracy | — | 0.5178 |
 
 Вывод: при 10 эпохах single-task модель даёт лучший intent detection;
 multi-task полезен как диагностический контекст, но не как основной predict

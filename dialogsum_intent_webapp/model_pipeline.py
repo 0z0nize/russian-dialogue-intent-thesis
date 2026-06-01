@@ -5,7 +5,7 @@ Pipeline для демо-вебинтерфейса по ВКР:
 Содержит:
 - ленивую загрузку Whisper (faster-whisper) для русского языка;
 - intent-классификацию: предпочтительно single-task RuBERT runtime
-  (best модель: macro-F1 0.7770, accuracy 0.9126 на test) из артефактов
+  (best модель: macro-F1 0.7794, accuracy 0.9054 на test) из артефактов
   проекта; при отсутствии — старая joblib-модель или rule-based fallback;
 - тематический классификатор (sentence-transformers + центроиды кластеров
   или keyword fallback);

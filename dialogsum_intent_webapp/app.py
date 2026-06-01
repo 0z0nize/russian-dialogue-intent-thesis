@@ -42,7 +42,7 @@ def _status_banner_md() -> str:
     if mode == "single_task_rubert_model":
         intent_text = (
             "Single-task RuBERT (обученные артефакты проекта). "
-            "Test metrics: accuracy 0.9126, macro-F1 0.7770."
+            "Test metrics: accuracy 0.9054, macro-F1 0.7794."
         )
     elif mode == "sklearn_intent_model":
         intent_text = "sklearn-pipeline intent_model.joblib (legacy)."
