@@ -32,7 +32,9 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s"
+)
 
 # ---------------------------------------------------------------------------
 # Глобальное состояние артефактов и моделей
@@ -45,19 +47,19 @@ _ARTIFACTS: Dict[str, Any] = {
     "topic_metadata": None,
     "sentence_encoder": None,
     # single-task RuBERT runtime
-    "torch_intent_runtime": None,        # SingleTaskIntentModelRuntime instance after lazy build
-    "torch_intent_state_path": None,     # путь к .pt, обнаруженный при load_artifacts
-    "torch_intent_state_source": None,   # "local" | "huggingface_hub"
-    "torch_intent_config": None,         # dict из multitask_config.json (если есть)
+    "torch_intent_runtime": None,  # SingleTaskIntentModelRuntime instance after lazy build
+    "torch_intent_state_path": None,  # путь к .pt, обнаруженный при load_artifacts
+    "torch_intent_state_source": None,  # "local" | "huggingface_hub"
+    "torch_intent_config": None,  # dict из multitask_config.json (если есть)
     "torch_intent_config_source": None,
     "torch_intent_label_encoder_source": None,
-    "torch_intent_load_error": None,     # последнее предупреждение при загрузке
-    "torch_intent_attempted": False,     # уже пытались lazy-build
+    "torch_intent_load_error": None,  # последнее предупреждение при загрузке
+    "torch_intent_attempted": False,  # уже пытались lazy-build
     # summarization
     "summarizer_model": None,
     "summarizer_tokenizer": None,
     "summarizer_attempted": False,
-    "summarizer_source": None,           # "local" | "huggingface_hub"
+    "summarizer_source": None,  # "local" | "huggingface_hub"
     "summarizer_path_or_name": None,
     "summarizer_load_error": None,
     "summarizer_device": None,
@@ -123,7 +125,9 @@ def _hf_download(filename: str) -> Optional[Path]:
         return Path(local)
     except Exception as exc:
         _ARTIFACTS["hf_download_error"] = f"{filename}: {exc}"
-        logger.warning("HF Hub: не удалось скачать %s из %s: %s", filename, repo_id, exc)
+        logger.warning(
+            "HF Hub: не удалось скачать %s из %s: %s", filename, repo_id, exc
+        )
         return None
 
 
@@ -150,19 +154,93 @@ INTENT_CLASSES: List[str] = [
 
 # Ключевые слова для rule-based fallback по интентам.
 _INTENT_KEYWORDS: Dict[str, List[str]] = {
-    "greeting": ["здравствуй", "привет", "добрый день", "доброе утро", "добрый вечер", "здравствуйте"],
+    "greeting": [
+        "здравствуй",
+        "привет",
+        "добрый день",
+        "доброе утро",
+        "добрый вечер",
+        "здравствуйте",
+    ],
     "thanks": ["спасибо", "благодар", "признателен", "благодарю"],
     "farewell": ["до свидания", "пока", "всего доброго", "до встречи", "счастливо"],
-    "informational_request": ["как узнать", "подскажите", "сколько стоит", "какие есть", "что такое", "почему", "когда", "где"],
-    "service_request": ["помогите", "нужна помощь", "проконсультируйте", "оформите", "сделайте", "нужно оформить"],
-    "purchase_or_booking_request": ["забронировать", "купить", "заказать", "оплатить", "оформить заказ", "хочу купить", "бронь"],
-    "complaint": ["жалоба", "недовольн", "ужасно", "плохо", "возмутитель", "не работает", "обманули"],
-    "problem_report": ["проблема", "не получается", "ошибка", "сломал", "не могу", "не работает", "сбой"],
-    "arrangement": ["договоримся", "встретимся", "давайте в", "назначим", "когда удобно", "запланируем"],
-    "confirmation": ["да", "согласен", "хорошо", "подтвержд", "конечно", "договорились"],
+    "informational_request": [
+        "как узнать",
+        "подскажите",
+        "сколько стоит",
+        "какие есть",
+        "что такое",
+        "почему",
+        "когда",
+        "где",
+    ],
+    "service_request": [
+        "помогите",
+        "нужна помощь",
+        "проконсультируйте",
+        "оформите",
+        "сделайте",
+        "нужно оформить",
+    ],
+    "purchase_or_booking_request": [
+        "забронировать",
+        "купить",
+        "заказать",
+        "оплатить",
+        "оформить заказ",
+        "хочу купить",
+        "бронь",
+    ],
+    "complaint": [
+        "жалоба",
+        "недовольн",
+        "ужасно",
+        "плохо",
+        "возмутитель",
+        "не работает",
+        "обманули",
+    ],
+    "problem_report": [
+        "проблема",
+        "не получается",
+        "ошибка",
+        "сломал",
+        "не могу",
+        "не работает",
+        "сбой",
+    ],
+    "arrangement": [
+        "договоримся",
+        "встретимся",
+        "давайте в",
+        "назначим",
+        "когда удобно",
+        "запланируем",
+    ],
+    "confirmation": [
+        "да",
+        "согласен",
+        "хорошо",
+        "подтвержд",
+        "конечно",
+        "договорились",
+    ],
     "rejection": ["нет", "отказ", "не нужно", "не хочу", "не буду", "не подходит"],
-    "suggestion_or_recommendation": ["рекомендую", "советую", "предлагаю", "попробуйте", "лучше выбрать"],
-    "opinion_or_preference": ["мне нравится", "я думаю", "по-моему", "считаю", "предпочитаю", "люблю"],
+    "suggestion_or_recommendation": [
+        "рекомендую",
+        "советую",
+        "предлагаю",
+        "попробуйте",
+        "лучше выбрать",
+    ],
+    "opinion_or_preference": [
+        "мне нравится",
+        "я думаю",
+        "по-моему",
+        "считаю",
+        "предпочитаю",
+        "люблю",
+    ],
 }
 
 
@@ -238,6 +316,7 @@ _TOPIC_FALLBACK: List[Dict[str, Any]] = [
 # Загрузка артефактов
 # ---------------------------------------------------------------------------
 
+
 def _env_flag(name: str, default: bool = True) -> bool:
     val = os.environ.get(name)
     if val is None:
@@ -283,7 +362,9 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
     быстрым.
     """
     models_path = Path(models_dir)
-    _ARTIFACTS["models_dir"] = str(models_path.resolve()) if models_path.exists() else str(models_path)
+    _ARTIFACTS["models_dir"] = (
+        str(models_path.resolve()) if models_path.exists() else str(models_path)
+    )
     _ARTIFACTS["hf_repo_id"] = _hf_repo_id()
     _ARTIFACTS["hf_available"] = False
     _ARTIFACTS["hf_download_error"] = None
@@ -299,11 +380,15 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
     if intent_label_path is not None:
         try:
             import joblib  # noqa: WPS433
+
             _ARTIFACTS["intent_label_encoder"] = joblib.load(intent_label_path)
-            _ARTIFACTS["torch_intent_label_encoder_source"] = _label_source(local_path is not None)
+            _ARTIFACTS["torch_intent_label_encoder_source"] = _label_source(
+                local_path is not None
+            )
             logger.info(
                 "Загружен intent_label_encoder.joblib (%s: %s)",
-                _ARTIFACTS["torch_intent_label_encoder_source"], intent_label_path,
+                _ARTIFACTS["torch_intent_label_encoder_source"],
+                intent_label_path,
             )
             if local_path is None:
                 _ARTIFACTS["hf_available"] = True
@@ -315,6 +400,7 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
     if intent_model_path is not None:
         try:
             import joblib  # noqa: WPS433
+
             _ARTIFACTS["intent_model"] = joblib.load(intent_model_path)
             logger.info("Загружен intent_model.joblib: %s", intent_model_path)
         except Exception as exc:  # pragma: no cover - зависит от артефактов
@@ -327,7 +413,9 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 _ARTIFACTS["torch_intent_config"] = json.load(f)
-            _ARTIFACTS["torch_intent_config_source"] = _label_source(local_path is not None)
+            _ARTIFACTS["torch_intent_config_source"] = _label_source(
+                local_path is not None
+            )
             logger.info(
                 "Загружен multitask_config.json (%s): model_name=%s, num_intents=%s",
                 _ARTIFACTS["torch_intent_config_source"],
@@ -340,7 +428,9 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
             logger.warning("Не удалось прочитать multitask_config.json: %s", exc)
 
     # single-task RuBERT state_dict
-    intent_state_file = os.environ.get("INTENT_MODEL_FILE", "single_task_intent_model.pt")
+    intent_state_file = os.environ.get(
+        "INTENT_MODEL_FILE", "single_task_intent_model.pt"
+    )
     local_path = _resolve_artifact_local(intent_state_file, models_path)
     intent_state_path = local_path or _hf_download(intent_state_file)
     if intent_state_path is not None:
@@ -348,7 +438,8 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
         _ARTIFACTS["torch_intent_state_source"] = _label_source(local_path is not None)
         logger.info(
             "Обнаружен single-task RuBERT state_dict (%s): %s (lazy-load при первом predict_intent)",
-            _ARTIFACTS["torch_intent_state_source"], intent_state_path,
+            _ARTIFACTS["torch_intent_state_source"],
+            intent_state_path,
         )
         if local_path is None:
             _ARTIFACTS["hf_available"] = True
@@ -358,7 +449,10 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
     if centroids_path is not None:
         try:
             _ARTIFACTS["topic_centroids"] = np.load(centroids_path)
-            logger.info("Загружен topic_centroids.npy: shape=%s", _ARTIFACTS["topic_centroids"].shape)
+            logger.info(
+                "Загружен topic_centroids.npy: shape=%s",
+                _ARTIFACTS["topic_centroids"].shape,
+            )
         except Exception as exc:  # pragma: no cover
             logger.warning("Не удалось загрузить topic_centroids.npy: %s", exc)
 
@@ -367,8 +461,12 @@ def load_artifacts(models_dir: str = "models") -> Dict[str, Any]:
     if meta_path is not None:
         try:
             import pandas as pd  # noqa: WPS433
+
             _ARTIFACTS["topic_metadata"] = pd.read_parquet(meta_path)
-            logger.info("Загружен topic_metadata.parquet: rows=%d", len(_ARTIFACTS["topic_metadata"]))
+            logger.info(
+                "Загружен topic_metadata.parquet: rows=%d",
+                len(_ARTIFACTS["topic_metadata"]),
+            )
         except Exception as exc:  # pragma: no cover
             logger.warning("Не удалось загрузить topic_metadata.parquet: %s", exc)
 
@@ -418,7 +516,9 @@ def get_artifact_status() -> Dict[str, Any]:
         "torch_intent_state_path": _ARTIFACTS.get("torch_intent_state_path"),
         "torch_intent_state_source": intent_state_source,
         "intent_label_encoder_found": has_encoder,
-        "intent_label_encoder_source": _ARTIFACTS.get("torch_intent_label_encoder_source"),
+        "intent_label_encoder_source": _ARTIFACTS.get(
+            "torch_intent_label_encoder_source"
+        ),
         "multitask_config_found": has_config,
         "multitask_config_source": _ARTIFACTS.get("torch_intent_config_source"),
         "torch_intent_runtime_loaded": runtime_loaded,
@@ -507,8 +607,12 @@ class SingleTaskIntentModelRuntime:
     def load_state_dict_from_path(self, path: str) -> Dict[str, Any]:
         torch = self._torch
         state = torch.load(path, map_location="cpu")
-        if isinstance(state, dict) and "state_dict" in state and not any(
-            k.startswith(("encoder.", "proj.", "intent_head.")) for k in state
+        if (
+            isinstance(state, dict)
+            and "state_dict" in state
+            and not any(
+                k.startswith(("encoder.", "proj.", "intent_head.")) for k in state
+            )
         ):
             state = state["state_dict"]
 
@@ -599,11 +703,14 @@ def _build_torch_intent_runtime() -> Optional[SingleTaskIntentModelRuntime]:
     )
     max_len = int(config.get("max_len") or _DEFAULT_TORCH_MAX_LEN)
     num_intents_cfg = config.get("num_intents")
-    num_intents = int(num_intents_cfg) if num_intents_cfg else len(label_encoder.classes_)
+    num_intents = (
+        int(num_intents_cfg) if num_intents_cfg else len(label_encoder.classes_)
+    )
     if num_intents != len(label_encoder.classes_):
         logger.warning(
             "num_intents из config (%s) != len(label_encoder.classes_) (%s); используем encoder",
-            num_intents_cfg, len(label_encoder.classes_),
+            num_intents_cfg,
+            len(label_encoder.classes_),
         )
         num_intents = len(label_encoder.classes_)
 
@@ -627,7 +734,9 @@ def _build_torch_intent_runtime() -> Optional[SingleTaskIntentModelRuntime]:
         _ARTIFACTS["torch_intent_load_error"] = None
     logger.info(
         "Single-task RuBERT runtime готов: base=%s, num_intents=%d, device=%s",
-        base_model_name, num_intents, info.get("device"),
+        base_model_name,
+        num_intents,
+        info.get("device"),
     )
     return runtime
 
@@ -636,13 +745,18 @@ def _build_torch_intent_runtime() -> Optional[SingleTaskIntentModelRuntime]:
 # Sentence encoder (для тематики, если есть centroids)
 # ---------------------------------------------------------------------------
 
+
 def _get_sentence_encoder():
     """Ленивая инициализация sentence-transformers (только если нужно)."""
     if _ARTIFACTS["sentence_encoder"] is not None:
         return _ARTIFACTS["sentence_encoder"]
     try:
         from sentence_transformers import SentenceTransformer  # noqa: WPS433
-        model_name = os.environ.get("SENTENCE_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+
+        model_name = os.environ.get(
+            "SENTENCE_MODEL",
+            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        )
         logger.info("Инициализация sentence-transformers: %s", model_name)
         _ARTIFACTS["sentence_encoder"] = SentenceTransformer(model_name)
         return _ARTIFACTS["sentence_encoder"]
@@ -654,6 +768,7 @@ def _get_sentence_encoder():
 # ---------------------------------------------------------------------------
 # STT: faster-whisper (ленивая загрузка)
 # ---------------------------------------------------------------------------
+
 
 def _get_whisper():
     global _WHISPER_MODEL
@@ -671,15 +786,23 @@ def _get_whisper():
     compute_type = "int8"
     try:
         import torch  # noqa: WPS433
+
         if torch.cuda.is_available():
             device = "cuda"
             compute_type = "float16"
     except Exception:  # pragma: no cover
         pass
 
-    logger.info("Загрузка Whisper: size=%s, device=%s, compute_type=%s", model_size, device, compute_type)
+    logger.info(
+        "Загрузка Whisper: size=%s, device=%s, compute_type=%s",
+        model_size,
+        device,
+        compute_type,
+    )
     try:
-        _WHISPER_MODEL = WhisperModel(model_size, device=device, compute_type=compute_type)
+        _WHISPER_MODEL = WhisperModel(
+            model_size, device=device, compute_type=compute_type
+        )
     except Exception as exc:  # pragma: no cover
         logger.error("Не удалось инициализировать Whisper: %s", exc)
         _WHISPER_MODEL = None
@@ -713,6 +836,7 @@ def transcribe_audio(audio_path: str) -> str:
 # ---------------------------------------------------------------------------
 # Intent prediction
 # ---------------------------------------------------------------------------
+
 
 def _intent_rule_based(text: str) -> Dict[str, Any]:
     text_low = text.lower()
@@ -767,12 +891,18 @@ def predict_intent(text: str) -> Dict[str, Any]:
                 pred = runtime.predict(text, top_k=5)
                 idx = int(pred["argmax_index"])
                 classes = list(encoder.classes_)
-                label = str(classes[idx]) if 0 <= idx < len(classes) else INTENT_CLASSES[idx % len(INTENT_CLASSES)]
+                label = (
+                    str(classes[idx])
+                    if 0 <= idx < len(classes)
+                    else INTENT_CLASSES[idx % len(INTENT_CLASSES)]
+                )
                 topk = [
                     {
-                        "label": str(classes[int(item["index"])])
-                        if 0 <= int(item["index"]) < len(classes)
-                        else f"class_{item['index']}",
+                        "label": (
+                            str(classes[int(item["index"])])
+                            if 0 <= int(item["index"]) < len(classes)
+                            else f"class_{item['index']}"
+                        ),
                         "confidence": float(item["confidence"]),
                     }
                     for item in pred.get("topk", [])
@@ -818,6 +948,7 @@ def predict_intent(text: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Topic prediction
 # ---------------------------------------------------------------------------
+
 
 def _topic_rule_based(text: str) -> Dict[str, Any]:
     text_low = text.lower()
@@ -927,7 +1058,9 @@ def _summarizer_local_dirs() -> List[Path]:
     explicit = os.environ.get("SUMMARIZATION_LOCAL_DIR")
     if explicit:
         candidates.append(Path(explicit))
-    models_dir = Path(_ARTIFACTS.get("models_dir") or os.environ.get("MODELS_DIR", "models"))
+    models_dir = Path(
+        _ARTIFACTS.get("models_dir") or os.environ.get("MODELS_DIR", "models")
+    )
     candidates.append(models_dir / "summarizer")
     candidates.append(models_dir / "summarization")
     return candidates
@@ -941,7 +1074,9 @@ def _resolve_summarizer_source() -> Dict[str, Any]:
                 return {"path_or_name": str(d.resolve()), "source": "local"}
         except OSError:
             continue
-    model_name = os.environ.get("SUMMARIZATION_MODEL_NAME", _DEFAULT_SUMMARIZATION_MODEL)
+    model_name = os.environ.get(
+        "SUMMARIZATION_MODEL_NAME", _DEFAULT_SUMMARIZATION_MODEL
+    )
     return {"path_or_name": model_name, "source": "huggingface_hub"}
 
 
@@ -949,7 +1084,9 @@ def _build_summarizer() -> bool:
     """Ленивая инициализация summarization-модели. True при успехе."""
     if _ARTIFACTS.get("summarizer_model") is not None:
         return True
-    if _ARTIFACTS.get("summarizer_attempted") and _ARTIFACTS.get("summarizer_load_error"):
+    if _ARTIFACTS.get("summarizer_attempted") and _ARTIFACTS.get(
+        "summarizer_load_error"
+    ):
         return False
     _ARTIFACTS["summarizer_attempted"] = True
 
@@ -972,7 +1109,11 @@ def _build_summarizer() -> bool:
         return False
 
     try:
-        logger.info("Summarizer: загрузка tokenizer/model из %s (source=%s)", path_or_name, source)
+        logger.info(
+            "Summarizer: загрузка tokenizer/model из %s (source=%s)",
+            path_or_name,
+            source,
+        )
         tokenizer = AutoTokenizer.from_pretrained(path_or_name)
         model = AutoModelForSeq2SeqLM.from_pretrained(path_or_name)
     except Exception as exc:
@@ -1161,8 +1302,7 @@ def analyze_utterances(text: str) -> List[Dict[str, Any]]:
             }
         topk = intent.get("topk") or []
         top2 = "; ".join(
-            f"{t['label']} ({float(t['confidence']):.2f})"
-            for t in topk[:3]
+            f"{t['label']} ({float(t['confidence']):.2f})" for t in topk[:3]
         )
         results.append(
             {
@@ -1241,6 +1381,7 @@ def analyze(text: str) -> Dict[str, Any]:
 
 if __name__ == "__main__":
     import json
+
     load_artifacts(os.environ.get("MODELS_DIR", "models"))
     sample = "Здравствуйте, я хочу забронировать билет на концерт в Москве"
     print(json.dumps(analyze(sample), ensure_ascii=False, indent=2))
